@@ -46,8 +46,8 @@ export async function purgeExpiredRateLimits(olderThanSeconds = 86_400): Promise
 }
 
 export const RATE_LIMITS = {
-  login: { name: "auth.login", limit: 10, windowSeconds: 15 * 60 },
-  loginPerEmail: { name: "auth.login.email", limit: 8, windowSeconds: 15 * 60 },
+  login: { name: "auth.login", limit: 20, windowSeconds: 15 * 60 },
+  loginPerEmail: { name: "auth.login.email", limit: 10, windowSeconds: 15 * 60 },
   register: { name: "auth.register", limit: 5, windowSeconds: 60 * 60 },
   mfaVerify: { name: "auth.mfa", limit: 8, windowSeconds: 10 * 60 },
   emailToken: { name: "auth.email-token", limit: 5, windowSeconds: 60 * 60 },
