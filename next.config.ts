@@ -32,8 +32,8 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
-  // Image Docker autonome (voir Dockerfile).
-  output: "standalone",
+  // Sortie autonome pour l'image Docker (activée par le Dockerfile).
+  output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   serverExternalPackages: ["@node-rs/argon2", "@prisma/client"],
   turbopack: {
     rules: {

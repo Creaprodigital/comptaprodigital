@@ -65,6 +65,15 @@ export class TenantIsolationError extends Error {
 
 type AnyArgs = Record<string, unknown>;
 
+/** Ajoute le filtre d'entreprise ; un filtre explicite sur une autre entreprise est une erreur de programmation. */
+function scopeWhere(model: string, where: unknown, companyId: string): AnyArgs {
+  const filter = (where as AnyArgs | undefined) ?? {};
+  if (filter.companyId !== undefined && filter.companyId !== companyId) {
+    throw new TenantIsolationError(`${model} : tentative de lecture ou d'écriture dans une autre entreprise.`);
+  }
+  return { ...filter, companyId };
+}
+
 function scopeData(model: string, data: unknown, companyId: string): unknown {
   if (Array.isArray(data)) return data.map((row) => scopeData(model, row, companyId));
   const row = { ...(data as AnyArgs) };
@@ -97,14 +106,14 @@ export function tenantDb(companyId: string) {
           const scoped = { ...(args as AnyArgs) };
 
           if (WHERE_OPERATIONS.has(operation)) {
-            scoped.where = { ...((scoped.where as AnyArgs | undefined) ?? {}), companyId };
+            scoped.where = scopeWhere(model, scoped.where, companyId);
             if (operation === "update" || operation === "updateMany") {
               assertNoTenantReassignment(model, scoped.data, companyId);
             }
           } else if (operation === "create" || operation === "createMany") {
             scoped.data = scopeData(model, scoped.data, companyId);
           } else if (operation === "upsert") {
-            scoped.where = { ...((scoped.where as AnyArgs | undefined) ?? {}), companyId };
+            scoped.where = scopeWhere(model, scoped.where, companyId);
             scoped.create = scopeData(model, scoped.create, companyId);
             assertNoTenantReassignment(model, scoped.update, companyId);
           } else {

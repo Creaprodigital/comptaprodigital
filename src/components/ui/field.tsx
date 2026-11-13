@@ -23,9 +23,9 @@ function Field({
   const describedBy = [error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined;
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Label htmlFor={id}>
+      {/* L'astérisque est décoratif (CSS) : le champ porte lui-même l'attribut required. */}
+      <Label htmlFor={id} className={required ? "gap-1 after:text-destructive-foreground after:content-['*']" : undefined}>
         {label}
-        {required ? <span className="text-destructive-foreground" aria-hidden="true">*</span> : null}
       </Label>
       {React.cloneElement(children, { id, "aria-invalid": error ? true : undefined, "aria-describedby": describedBy })}
       {hint && !error ? (
