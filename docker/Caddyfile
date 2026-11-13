@@ -1,0 +1,21 @@
+# Reverse proxy HTTPS (certificats Let's Encrypt automatiques).
+# Caddy remplace l'en-tête X-Forwarded-For par l'adresse réelle du client :
+# l'application s'en sert pour la limitation de débit et le journal d'audit.
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Taille maximale des requêtes (imports de relevés et de justificatifs).
+	request_body {
+		max_size 25MB
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

@@ -76,6 +76,16 @@ describe("inscription et vérification de l'adresse e-mail", () => {
   });
 });
 
+describe("fermeture des inscriptions", () => {
+  it("refuse toute nouvelle inscription lorsque la plateforme les a fermées", async () => {
+    await prisma.applicationSetting.update({ where: { key: "platform.registration_open" }, data: { value: false } });
+    await expect(registerUser(registration("ferme@exemple.test"))).rejects.toMatchObject({ status: 403, code: "REGISTRATION_CLOSED" });
+    expect(await prisma.user.count({ where: { email: "ferme@exemple.test" } })).toBe(0);
+    await prisma.applicationSetting.update({ where: { key: "platform.registration_open" }, data: { value: true } });
+    await expect(registerUser(registration("rouvert@exemple.test"))).resolves.toBeUndefined();
+  });
+});
+
 describe("connexion", () => {
   it("ouvre une session valide avec les bons identifiants", async () => {
     const user = await createVerifiedUser({ email: "connexion@exemple.test" });

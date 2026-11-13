@@ -67,6 +67,12 @@ async function sendVerificationEmail(user: Pick<User, "id" | "email" | "firstNam
  * pas révéler l'existence d'un compte (le titulaire est prévenu par e-mail).
  */
 export async function registerUser(input: RegisterInput, meta: Meta = {}): Promise<void> {
+  // Paramètre global de la plateforme (pilotable depuis l'administration).
+  const registration = await prisma.applicationSetting.findUnique({ where: { key: "platform.registration_open" } });
+  if (registration?.value === false) {
+    throw new AppError(403, "REGISTRATION_CLOSED", "Les inscriptions sont momentanément fermées. Contactez-nous pour être prévenu de leur réouverture.");
+  }
+
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
 
   if (existing) {
