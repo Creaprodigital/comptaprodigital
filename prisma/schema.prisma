@@ -1,0 +1,1645 @@
+// =============================================================================
+// ComptaPro Digital — schéma relationnel MySQL 8
+//
+// Conventions :
+//  - Toute table métier porte un `companyId` : c'est la clé d'isolation
+//    multi-entreprises (voir src/server/tenancy/tenant-db.ts).
+//  - Tous les montants sont des DECIMAL exacts (jamais de flottants).
+//      montants  : DECIMAL(15,2)   quantités / prix unitaires : DECIMAL(15,4)
+//      taux      : DECIMAL(5,2)
+//  - Les tables sont nommées en snake_case via @@map.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Identité, sessions, rôles et permissions
+// -----------------------------------------------------------------------------
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id                 String     @id @default(cuid())
+  email              String     @unique @db.VarChar(191)
+  passwordHash       String     @db.VarChar(255)
+  firstName          String     @db.VarChar(100)
+  lastName           String     @db.VarChar(100)
+  phone              String?    @db.VarChar(30)
+  locale             String     @default("fr-FR") @db.VarChar(10)
+  status             UserStatus @default(ACTIVE)
+  /// Rôle plateforme : super administrateur SaaS (aucun accès implicite aux données financières des clients).
+  isSuperAdmin       Boolean    @default(false)
+  emailVerifiedAt    DateTime?
+  termsAcceptedAt    DateTime?
+  /// Secret TOTP chiffré (AES-256-GCM) — jamais stocké en clair.
+  mfaSecretEncrypted String?    @db.VarChar(512)
+  mfaEnabledAt       DateTime?
+  failedLoginCount   Int        @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  deletedAt          DateTime?
+
+  sessions           Session[]
+  verificationTokens VerificationToken[]
+  recoveryCodes      MfaRecoveryCode[]
+  memberships        CompanyUser[]
+  subscription       Subscription?
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  supportTickets     SupportTicket[]
+  companiesCreated   Company[]              @relation("CompanyCreator")
+  invitationsSent    CompanyInvitation[]
+  adminAccessGrants  AdminDataAccessGrant[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id              String    @id @default(cuid())
+  userId          String
+  /// SHA-256 du jeton opaque placé dans le cookie httpOnly.
+  tokenHash       String    @unique @db.Char(64)
+  /// Session en attente de second facteur : n'ouvre aucun droit tant que le code TOTP n'est pas validé.
+  mfaPending      Boolean   @default(false)
+  activeCompanyId String?
+  ipAddress       String?   @db.VarChar(64)
+  userAgent       String?   @db.VarChar(512)
+  createdAt       DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+  expiresAt       DateTime
+  revokedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+enum VerificationTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model VerificationToken {
+  id        String                @id @default(cuid())
+  userId    String
+  type      VerificationTokenType
+  tokenHash String                @unique @db.Char(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime              @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("verification_tokens")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @db.Char(64)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+enum RoleScope {
+  COMPANY
+  PLATFORM
+}
+
+model Role {
+  id          String    @id @default(cuid())
+  /// OWNER, COMPANY_ADMIN, COLLABORATOR, READ_ONLY, EXTERNAL_ACCOUNTANT, SUPER_ADMIN
+  key         String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(100)
+  description String?   @db.VarChar(255)
+  scope       RoleScope @default(COMPANY)
+  isSystem    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  permissions RolePermission[]
+  members     CompanyUser[]
+  invitations CompanyInvitation[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  /// Format « module:action », ex. invoices:write
+  key         String  @unique @db.VarChar(80)
+  module      String  @db.VarChar(40)
+  description String? @db.VarChar(255)
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// -----------------------------------------------------------------------------
+// Entreprises (tenants) et membres
+// -----------------------------------------------------------------------------
+
+enum LegalForm {
+  MICRO_ENTREPRISE
+  EI
+  EURL
+  SARL
+  SASU
+  SAS
+  SA
+  SCI
+  ASSOCIATION
+  OTHER
+}
+
+enum TaxRegime {
+  MICRO_BIC
+  MICRO_BNC
+  BNC_DECLARATION_CONTROLEE
+  IR_REEL_SIMPLIFIE
+  IR_REEL_NORMAL
+  IS_REEL_SIMPLIFIE
+  IS_REEL_NORMAL
+}
+
+enum VatRegime {
+  FRANCHISE
+  REEL_SIMPLIFIE
+  REEL_NORMAL_MENSUEL
+  REEL_NORMAL_TRIMESTRIEL
+}
+
+enum VatExigibility {
+  /// TVA exigible à la facturation (livraisons de biens, option sur les débits)
+  DEBITS
+  /// TVA exigible à l'encaissement (prestations de services, par défaut)
+  ENCAISSEMENTS
+}
+
+enum AccountingMode {
+  /// Livre des recettes / registre des achats (micro-entreprises)
+  CASH_BOOK
+  /// Comptabilité d'engagement en partie double
+  DOUBLE_ENTRY
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model Company {
+  id                     String         @id @default(cuid())
+  name                   String         @db.VarChar(191)
+  tradeName              String?        @db.VarChar(191)
+  siren                  String?        @db.Char(9)
+  siret                  String?        @db.Char(14)
+  vatNumber              String?        @db.VarChar(20)
+  nafCode                String?        @db.VarChar(10)
+  rcsCity                String?        @db.VarChar(100)
+  shareCapital           Decimal?       @db.Decimal(15, 2)
+  legalForm              LegalForm
+  taxRegime              TaxRegime
+  vatRegime              VatRegime
+  vatExigibility         VatExigibility @default(ENCAISSEMENTS)
+  accountingMode         AccountingMode @default(DOUBLE_ENTRY)
+  /// Mois d'ouverture de l'exercice comptable (1 = janvier).
+  fiscalYearStartMonth   Int            @default(1) @db.TinyInt
+  registrationDate       DateTime?      @db.Date
+  addressLine1           String?        @db.VarChar(191)
+  addressLine2           String?        @db.VarChar(191)
+  postalCode             String?        @db.VarChar(10)
+  city                   String?        @db.VarChar(100)
+  country                String         @default("FR") @db.Char(2)
+  email                  String?        @db.VarChar(191)
+  phone                  String?        @db.VarChar(30)
+  website                String?        @db.VarChar(191)
+  currency               String         @default("EUR") @db.Char(3)
+  // Paramètres de facturation
+  invoicePrefix          String         @default("F") @db.VarChar(10)
+  quotePrefix            String         @default("D") @db.VarChar(10)
+  creditNotePrefix       String         @default("A") @db.VarChar(10)
+  defaultPaymentTermDays Int            @default(30)
+  latePenaltyRate        Decimal?       @db.Decimal(5, 2)
+  invoiceFooter          String?        @db.Text
+  /// IBAN de l'entreprise affiché sur les factures — chiffré au repos.
+  ibanEncrypted          String?        @db.VarChar(512)
+  bic                    String?        @db.VarChar(11)
+  logoDocumentId         String?
+  status                 CompanyStatus  @default(ACTIVE)
+  suspendedAt            DateTime?
+  suspendedReason        String?        @db.VarChar(255)
+  createdById            String
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  createdBy             User                   @relation("CompanyCreator", fields: [createdById], references: [id])
+  members               CompanyUser[]
+  invitations           CompanyInvitation[]
+  fiscalYears           FiscalYear[]
+  customers             Customer[]
+  suppliers             Supplier[]
+  products              Product[]
+  vatRates              VatRate[]
+  quotes                Quote[]
+  invoices              Invoice[]
+  recurringInvoices     RecurringInvoice[]
+  numberSequences       NumberSequence[]
+  payments              Payment[]
+  purchases             Purchase[]
+  bankAccounts          BankAccount[]
+  bankTransactions      BankTransaction[]
+  bankImports           BankImport[]
+  transactionCategories TransactionCategory[]
+  categorizationRules   CategorizationRule[]
+  accountingAccounts    AccountingAccount[]
+  accountingJournals    AccountingJournal[]
+  accountingEntries     AccountingEntry[]
+  accountingEntryLines  AccountingEntryLine[]
+  fixedAssets           FixedAsset[]
+  vatPeriods            VatPeriod[]
+  documents             Document[]
+  documentLinks         DocumentLink[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  supportTickets        SupportTicket[]
+  aiSuggestions         AiSuggestion[]
+  adminAccessGrants     AdminDataAccessGrant[]
+
+  @@index([siren])
+  @@index([status])
+  @@index([createdById])
+  @@map("companies")
+}
+
+enum MembershipStatus {
+  ACTIVE
+  REVOKED
+}
+
+model CompanyUser {
+  id        String           @id @default(cuid())
+  companyId String
+  userId    String
+  roleId    String
+  status    MembershipStatus @default(ACTIVE)
+  joinedAt  DateTime         @default(now())
+  revokedAt DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("company_users")
+}
+
+model CompanyInvitation {
+  id          String    @id @default(cuid())
+  companyId   String
+  email       String    @db.VarChar(191)
+  roleId      String
+  tokenHash   String    @unique @db.Char(64)
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role      Role    @relation(fields: [roleId], references: [id])
+  invitedBy User    @relation(fields: [invitedById], references: [id])
+
+  @@index([companyId])
+  @@index([email])
+  @@map("company_invitations")
+}
+
+// -----------------------------------------------------------------------------
+// Abonnements SaaS
+// -----------------------------------------------------------------------------
+
+model SubscriptionPlan {
+  id                   String   @id @default(cuid())
+  /// STARTER, PRO, BUSINESS
+  key                  String   @unique @db.VarChar(30)
+  name                 String   @db.VarChar(60)
+  tagline              String?  @db.VarChar(191)
+  monthlyPrice         Decimal  @db.Decimal(10, 2)
+  yearlyPrice          Decimal  @db.Decimal(10, 2)
+  currency             String   @default("EUR") @db.Char(3)
+  trialDays            Int      @default(14)
+  /// Liste des arguments affichés sur la page Tarifs (string[]).
+  features             Json
+  /// Limitations techniques : { maxCompanies, maxMembers, modules: string[] }
+  limits               Json
+  stripeProductId      String?  @db.VarChar(100)
+  stripeMonthlyPriceId String?  @db.VarChar(100)
+  stripeYearlyPriceId  String?  @db.VarChar(100)
+  isActive             Boolean  @default(true)
+  isFeatured           Boolean  @default(false)
+  sortOrder            Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  UNPAID
+  INCOMPLETE
+  CANCELED
+  EXPIRED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+/// L'abonnement est porté par le compte propriétaire et couvre ses entreprises.
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  planId               String
+  status               SubscriptionStatus @default(TRIALING)
+  billingInterval      BillingInterval    @default(MONTHLY)
+  trialEndsAt          DateTime?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  stripeCustomerId     String?            @unique @db.VarChar(100)
+  stripeSubscriptionId String?            @unique @db.VarChar(100)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan      @relation(fields: [planId], references: [id])
+  payments SubscriptionPayment[]
+
+  @@index([planId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model SubscriptionPayment {
+  id               String    @id @default(cuid())
+  subscriptionId   String
+  stripeInvoiceId  String    @unique @db.VarChar(100)
+  amount           Decimal   @db.Decimal(10, 2)
+  currency         String    @default("EUR") @db.Char(3)
+  status           String    @db.VarChar(30)
+  paidAt           DateTime?
+  hostedInvoiceUrl String?   @db.VarChar(512)
+  invoicePdfUrl    String?   @db.VarChar(512)
+  createdAt        DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}
+
+/// Idempotence des webhooks Stripe : un événement n'est traité qu'une fois.
+model StripeEvent {
+  id          String   @id @db.VarChar(100)
+  type        String   @db.VarChar(100)
+  processedAt DateTime @default(now())
+
+  @@map("stripe_events")
+}
+
+// -----------------------------------------------------------------------------
+// Tiers, catalogue et facturation
+// -----------------------------------------------------------------------------
+
+enum PartyType {
+  COMPANY
+  INDIVIDUAL
+}
+
+model Customer {
+  id              String    @id @default(cuid())
+  companyId       String
+  type            PartyType @default(COMPANY)
+  name            String    @db.VarChar(191)
+  contactName     String?   @db.VarChar(191)
+  email           String?   @db.VarChar(191)
+  phone           String?   @db.VarChar(30)
+  siren           String?   @db.Char(9)
+  siret           String?   @db.Char(14)
+  vatNumber       String?   @db.VarChar(20)
+  addressLine1    String?   @db.VarChar(191)
+  addressLine2    String?   @db.VarChar(191)
+  postalCode      String?   @db.VarChar(10)
+  city            String?   @db.VarChar(100)
+  country         String    @default("FR") @db.Char(2)
+  paymentTermDays Int?
+  /// Compte auxiliaire client (411xxx)
+  accountNumber   String?   @db.VarChar(20)
+  notes           String?   @db.Text
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quotes            Quote[]
+  invoices          Invoice[]
+  recurringInvoices RecurringInvoice[]
+
+  @@index([companyId, name])
+  @@index([companyId, email])
+  @@map("customers")
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  companyId     String
+  name          String    @db.VarChar(191)
+  contactName   String?   @db.VarChar(191)
+  email         String?   @db.VarChar(191)
+  phone         String?   @db.VarChar(30)
+  siren         String?   @db.Char(9)
+  siret         String?   @db.Char(14)
+  vatNumber     String?   @db.VarChar(20)
+  addressLine1  String?   @db.VarChar(191)
+  addressLine2  String?   @db.VarChar(191)
+  postalCode    String?   @db.VarChar(10)
+  city          String?   @db.VarChar(100)
+  country       String    @default("FR") @db.Char(2)
+  /// Compte auxiliaire fournisseur (401xxx)
+  accountNumber String?   @db.VarChar(20)
+  notes         String?   @db.Text
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchases Purchase[]
+
+  @@index([companyId, name])
+  @@map("suppliers")
+}
+
+enum ProductType {
+  SERVICE
+  GOOD
+}
+
+model Product {
+  id               String      @id @default(cuid())
+  companyId        String
+  type             ProductType @default(SERVICE)
+  reference        String?     @db.VarChar(60)
+  name             String      @db.VarChar(191)
+  description      String?     @db.Text
+  unit             String?     @db.VarChar(30)
+  unitPriceExclTax Decimal     @db.Decimal(15, 4)
+  vatRate          Decimal     @db.Decimal(5, 2)
+  /// Compte de produits (706, 707…)
+  accountNumber    String?     @db.VarChar(20)
+  isActive         Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quoteItems   QuoteItem[]
+  invoiceItems InvoiceItem[]
+
+  @@index([companyId, name])
+  @@index([companyId, reference])
+  @@map("products")
+}
+
+model VatRate {
+  id        String   @id @default(cuid())
+  /// NULL = taux système commun à toutes les entreprises.
+  companyId String?
+  label     String   @db.VarChar(100)
+  rate      Decimal  @db.Decimal(5, 2)
+  /// Mention légale associée (ex. « TVA non applicable, art. 293 B du CGI »).
+  legalNote String?  @db.VarChar(255)
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("vat_rates")
+}
+
+enum DiscountType {
+  NONE
+  PERCENT
+  AMOUNT
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  INVOICED
+}
+
+model Quote {
+  id            String       @id @default(cuid())
+  companyId     String
+  customerId    String
+  number        String       @db.VarChar(40)
+  status        QuoteStatus  @default(DRAFT)
+  issueDate     DateTime     @db.Date
+  validUntil    DateTime?    @db.Date
+  subject       String?      @db.VarChar(255)
+  notes         String?      @db.Text
+  terms         String?      @db.Text
+  discountType  DiscountType @default(NONE)
+  discountValue Decimal      @default(0) @db.Decimal(15, 2)
+  totalExclTax  Decimal      @default(0) @db.Decimal(15, 2)
+  totalVat      Decimal      @default(0) @db.Decimal(15, 2)
+  totalInclTax  Decimal      @default(0) @db.Decimal(15, 2)
+  currency      String       @default("EUR") @db.Char(3)
+  sentAt        DateTime?
+  acceptedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  company  Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer    @relation(fields: [customerId], references: [id])
+  items    QuoteItem[]
+  invoices Invoice[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, issueDate])
+  @@index([customerId])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id               String  @id @default(cuid())
+  quoteId          String
+  productId        String?
+  position         Int
+  description      String  @db.Text
+  quantity         Decimal @db.Decimal(15, 4)
+  unit             String? @db.VarChar(30)
+  unitPriceExclTax Decimal @db.Decimal(15, 4)
+  discountRate     Decimal @default(0) @db.Decimal(5, 2)
+  vatRate          Decimal @db.Decimal(5, 2)
+  totalExclTax     Decimal @db.Decimal(15, 2)
+  totalVat         Decimal @db.Decimal(15, 2)
+  totalInclTax     Decimal @db.Decimal(15, 2)
+
+  quote   Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([productId])
+  @@map("quote_items")
+}
+
+enum InvoiceType {
+  INVOICE
+  DEPOSIT
+  CREDIT_NOTE
+}
+
+enum InvoiceStatus {
+  /// Brouillon modifiable, sans numéro définitif.
+  DRAFT
+  /// Émise : numérotée, verrouillée, non modifiable (correction par avoir uniquement).
+  ISSUED
+  SENT
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+/// Catégorie d'opération — mention obligatoire dans le cadre de la réforme de la facturation électronique.
+enum OperationCategory {
+  GOODS
+  SERVICES
+  MIXED
+}
+
+enum EInvoiceFormat {
+  FACTUR_X
+  UBL
+  CII
+}
+
+enum EInvoiceStatus {
+  NOT_APPLICABLE
+  PENDING
+  DEPOSITED
+  REJECTED
+  ACCEPTED
+}
+
+model Invoice {
+  id                  String            @id @default(cuid())
+  companyId           String
+  customerId          String
+  type                InvoiceType       @default(INVOICE)
+  status              InvoiceStatus     @default(DRAFT)
+  /// Attribué à l'émission, dans une séquence chronologique continue (jamais réutilisé).
+  number              String?           @db.VarChar(40)
+  issueDate           DateTime?         @db.Date
+  dueDate             DateTime?         @db.Date
+  serviceDate         DateTime?         @db.Date
+  quoteId             String?
+  /// Facture d'origine pour un avoir.
+  originalInvoiceId   String?
+  recurringInvoiceId  String?
+  subject             String?           @db.VarChar(255)
+  notes               String?           @db.Text
+  paymentTerms        String?           @db.Text
+  operationCategory   OperationCategory @default(SERVICES)
+  vatExigibility      VatExigibility    @default(ENCAISSEMENTS)
+  discountType        DiscountType      @default(NONE)
+  discountValue       Decimal           @default(0) @db.Decimal(15, 2)
+  totalExclTax        Decimal           @default(0) @db.Decimal(15, 2)
+  totalVat            Decimal           @default(0) @db.Decimal(15, 2)
+  totalInclTax        Decimal           @default(0) @db.Decimal(15, 2)
+  amountPaid          Decimal           @default(0) @db.Decimal(15, 2)
+  currency            String            @default("EUR") @db.Char(3)
+  /// Instantané figé (émetteur + client) au moment de l'émission.
+  partiesSnapshot     Json?
+  issuedAt            DateTime?
+  sentAt              DateTime?
+  paidAt              DateTime?
+  cancelledAt         DateTime?
+  reminderCount       Int               @default(0)
+  lastReminderAt      DateTime?
+  pdfDocumentId       String?
+  // Facturation électronique : préparation de l'intégration à une plateforme agréée.
+  eInvoiceFormat      EInvoiceFormat?
+  eInvoiceStatus      EInvoiceStatus    @default(NOT_APPLICABLE)
+  eInvoicePlatformRef String?           @db.VarChar(191)
+  createdById         String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  quote            Quote?            @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  originalInvoice  Invoice?          @relation("CreditNotes", fields: [originalInvoiceId], references: [id])
+  creditNotes      Invoice[]         @relation("CreditNotes")
+  recurringInvoice RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id], onDelete: SetNull)
+  items            InvoiceItem[]
+  payments         Payment[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, issueDate])
+  @@index([companyId, dueDate])
+  @@index([customerId])
+  @@index([quoteId])
+  @@index([originalInvoiceId])
+  @@index([recurringInvoiceId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id               String  @id @default(cuid())
+  invoiceId        String
+  productId        String?
+  position         Int
+  description      String  @db.Text
+  quantity         Decimal @db.Decimal(15, 4)
+  unit             String? @db.VarChar(30)
+  unitPriceExclTax Decimal @db.Decimal(15, 4)
+  discountRate     Decimal @default(0) @db.Decimal(5, 2)
+  vatRate          Decimal @db.Decimal(5, 2)
+  totalExclTax     Decimal @db.Decimal(15, 2)
+  totalVat         Decimal @db.Decimal(15, 2)
+  totalInclTax     Decimal @db.Decimal(15, 2)
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("invoice_items")
+}
+
+enum SequenceType {
+  INVOICE
+  CREDIT_NOTE
+  QUOTE
+}
+
+/// Compteurs de numérotation : incrémentés sous verrou transactionnel pour garantir une suite sans trou.
+model NumberSequence {
+  id         String       @id @default(cuid())
+  companyId  String
+  type       SequenceType
+  year       Int
+  lastNumber Int          @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type, year])
+  @@map("number_sequences")
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum RecurringStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+model RecurringInvoice {
+  id          String              @id @default(cuid())
+  companyId   String
+  customerId  String
+  label       String              @db.VarChar(191)
+  frequency   RecurrenceFrequency
+  nextRunDate DateTime            @db.Date
+  endDate     DateTime?           @db.Date
+  /// Modèle de facture (lignes, conditions) rejoué à chaque échéance — crée un brouillon ou émet selon autoIssue.
+  template    Json
+  autoIssue   Boolean             @default(false)
+  status      RecurringStatus     @default(ACTIVE)
+  lastRunAt   DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer  @relation(fields: [customerId], references: [id])
+  invoices Invoice[]
+
+  @@index([companyId, status, nextRunDate])
+  @@index([customerId])
+  @@map("recurring_invoices")
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CARD
+  CHECK
+  CASH
+  DIRECT_DEBIT
+  OTHER
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  companyId         String
+  invoiceId         String
+  amount            Decimal       @db.Decimal(15, 2)
+  paidAt            DateTime      @db.Date
+  method            PaymentMethod @default(TRANSFER)
+  reference         String?       @db.VarChar(191)
+  note              String?       @db.VarChar(255)
+  bankTransactionId String?
+  createdById       String?
+  createdAt         DateTime      @default(now())
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction? @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, paidAt])
+  @@index([invoiceId])
+  @@index([bankTransactionId])
+  @@map("payments")
+}
+
+enum PurchaseStatus {
+  DRAFT
+  TO_PAY
+  PAID
+  CANCELLED
+}
+
+/// Factures fournisseurs et dépenses (alimente le journal des achats et la TVA déductible).
+model Purchase {
+  id           String         @id @default(cuid())
+  companyId    String
+  supplierId   String?
+  reference    String?        @db.VarChar(100)
+  label        String         @db.VarChar(255)
+  issueDate    DateTime       @db.Date
+  dueDate      DateTime?      @db.Date
+  status       PurchaseStatus @default(TO_PAY)
+  categoryId   String?
+  totalExclTax Decimal        @db.Decimal(15, 2)
+  totalVat     Decimal        @default(0) @db.Decimal(15, 2)
+  totalInclTax Decimal        @db.Decimal(15, 2)
+  amountPaid   Decimal        @default(0) @db.Decimal(15, 2)
+  paidAt       DateTime?      @db.Date
+  currency     String         @default("EUR") @db.Char(3)
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier         Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  category         TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bankTransactions BankTransaction[]
+
+  @@index([companyId, issueDate])
+  @@index([companyId, status])
+  @@index([supplierId])
+  @@index([categoryId])
+  @@map("purchases")
+}
+
+// -----------------------------------------------------------------------------
+// Banque
+// -----------------------------------------------------------------------------
+
+enum BankProvider {
+  /// Saisie manuelle et imports de relevés
+  MANUAL
+  /// Agrégateur bancaire réglementé (DSP2) — aucun identifiant bancaire n'est stocké par la plateforme.
+  AGGREGATOR
+}
+
+model BankAccount {
+  id                 String       @id @default(cuid())
+  companyId          String
+  name               String       @db.VarChar(100)
+  bankName           String?      @db.VarChar(100)
+  ibanEncrypted      String?      @db.VarChar(512)
+  ibanLast4          String?      @db.Char(4)
+  bic                String?      @db.VarChar(11)
+  currency           String       @default("EUR") @db.Char(3)
+  openingBalance     Decimal      @default(0) @db.Decimal(15, 2)
+  openingBalanceDate DateTime?    @db.Date
+  /// Compte comptable associé (512xxx)
+  accountNumber      String?      @db.VarChar(20)
+  provider           BankProvider @default(MANUAL)
+  providerAccountRef String?      @db.VarChar(191)
+  lastSyncedAt       DateTime?
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions BankTransaction[]
+  imports      BankImport[]
+  journals     AccountingJournal[]
+
+  @@index([companyId])
+  @@map("bank_accounts")
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+  TRANSFER
+  TAX
+  PAYROLL
+  OTHER
+}
+
+model TransactionCategory {
+  id            String       @id @default(cuid())
+  /// NULL = catégorie système proposée à toutes les entreprises.
+  companyId     String?
+  name          String       @db.VarChar(100)
+  kind          CategoryKind
+  /// Compte du plan comptable suggéré (ex. 6226 Honoraires)
+  accountNumber String?      @db.VarChar(20)
+  color         String?      @db.VarChar(9)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  company      Company?             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions BankTransaction[]
+  purchases    Purchase[]
+  rules        CategorizationRule[]
+
+  @@index([companyId, kind])
+  @@map("transaction_categories")
+}
+
+enum BankTransactionStatus {
+  TO_REVIEW
+  CATEGORIZED
+  RECONCILED
+}
+
+model BankTransaction {
+  id                 String                @id @default(cuid())
+  companyId          String
+  bankAccountId      String
+  date               DateTime              @db.Date
+  valueDate          DateTime?             @db.Date
+  label              String                @db.VarChar(255)
+  rawLabel           String?               @db.VarChar(512)
+  /// Montant signé : positif = encaissement, négatif = décaissement.
+  amount             Decimal               @db.Decimal(15, 2)
+  currency           String                @default("EUR") @db.Char(3)
+  status             BankTransactionStatus @default(TO_REVIEW)
+  categoryId         String?
+  vatRate            Decimal?              @db.Decimal(5, 2)
+  vatAmount          Decimal?              @db.Decimal(15, 2)
+  purchaseId         String?
+  importId           String?
+  externalId         String?               @db.VarChar(191)
+  /// Empreinte (date + montant + libellé normalisé) pour la détection des doublons.
+  fingerprint        String                @db.Char(64)
+  isDuplicateSuspect Boolean               @default(false)
+  notes              String?               @db.Text
+  reconciledAt       DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount          @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  category    TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  purchase    Purchase?            @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  import      BankImport?          @relation(fields: [importId], references: [id], onDelete: SetNull)
+  payments    Payment[]
+
+  @@index([companyId, date])
+  @@index([bankAccountId, date])
+  @@index([bankAccountId, fingerprint])
+  @@index([companyId, status])
+  @@index([categoryId])
+  @@index([purchaseId])
+  @@index([importId])
+  @@map("bank_transactions")
+}
+
+enum BankImportFormat {
+  CSV
+  OFX
+  CAMT053
+}
+
+model BankImport {
+  id             String           @id @default(cuid())
+  companyId      String
+  bankAccountId  String
+  format         BankImportFormat
+  fileName       String           @db.VarChar(255)
+  rowCount       Int              @default(0)
+  importedCount  Int              @default(0)
+  duplicateCount Int              @default(0)
+  createdById    String?
+  createdAt      DateTime         @default(now())
+
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount       @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  transactions BankTransaction[]
+
+  @@index([companyId])
+  @@index([bankAccountId])
+  @@map("bank_imports")
+}
+
+enum RuleMatchType {
+  CONTAINS
+  STARTS_WITH
+  EQUALS
+  REGEX
+}
+
+model CategorizationRule {
+  id         String        @id @default(cuid())
+  companyId  String
+  name       String        @db.VarChar(100)
+  matchType  RuleMatchType @default(CONTAINS)
+  pattern    String        @db.VarChar(255)
+  /// IN = encaissements, OUT = décaissements, NULL = les deux
+  direction  String?       @db.VarChar(3)
+  amountMin  Decimal?      @db.Decimal(15, 2)
+  amountMax  Decimal?      @db.Decimal(15, 2)
+  categoryId String
+  vatRate    Decimal?      @db.Decimal(5, 2)
+  priority   Int           @default(0)
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category TransactionCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, priority])
+  @@index([categoryId])
+  @@map("categorization_rules")
+}
+
+// -----------------------------------------------------------------------------
+// Comptabilité
+// -----------------------------------------------------------------------------
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+model FiscalYear {
+  id            String           @id @default(cuid())
+  companyId     String
+  label         String           @db.VarChar(60)
+  startDate     DateTime         @db.Date
+  endDate       DateTime         @db.Date
+  status        FiscalYearStatus @default(OPEN)
+  /// Verrouillage de période : aucune écriture ne peut être créée ou corrigée jusqu'à cette date incluse.
+  lockedThrough DateTime?        @db.Date
+  closedAt      DateTime?
+  closedById    String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  company       Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entries       AccountingEntry[]
+  depreciations FixedAssetDepreciation[]
+
+  @@unique([companyId, startDate])
+  @@index([companyId, endDate])
+  @@map("fiscal_years")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+model AccountingAccount {
+  id        String      @id @default(cuid())
+  companyId String
+  /// Numéro du plan comptable général (ex. 411000, 706000)
+  number    String      @db.VarChar(20)
+  label     String      @db.VarChar(191)
+  type      AccountType
+  isActive  Boolean     @default(true)
+  /// Compte issu du PCG de référence (non supprimable).
+  isSystem  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lines   AccountingEntryLine[]
+
+  @@unique([companyId, number])
+  @@map("accounting_accounts")
+}
+
+enum JournalType {
+  SALES
+  PURCHASES
+  BANK
+  MISC
+  OPENING
+}
+
+model AccountingJournal {
+  id            String      @id @default(cuid())
+  companyId     String
+  /// Code journal (VT, AC, BQ, OD, AN)
+  code          String      @db.VarChar(10)
+  label         String      @db.VarChar(100)
+  type          JournalType
+  bankAccountId String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount?      @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  entries     AccountingEntry[]
+
+  @@unique([companyId, code])
+  @@index([bankAccountId])
+  @@map("accounting_journals")
+}
+
+enum EntryStatus {
+  /// Brouillard : modifiable
+  DRAFT
+  /// Validée : intangible. Toute correction passe par une écriture de contre-passation.
+  VALIDATED
+}
+
+enum EntrySource {
+  MANUAL
+  INVOICE
+  PAYMENT
+  PURCHASE
+  BANK_TRANSACTION
+  DEPRECIATION
+  CLOSING
+  OPENING
+}
+
+model AccountingEntry {
+  id            String      @id @default(cuid())
+  companyId     String
+  journalId     String
+  fiscalYearId  String
+  /// Numéro séquentiel continu attribué à la validation (EcritureNum du FEC).
+  entryNumber   Int?
+  date          DateTime    @db.Date
+  pieceRef      String?     @db.VarChar(100)
+  pieceDate     DateTime?   @db.Date
+  label         String      @db.VarChar(255)
+  status        EntryStatus @default(DRAFT)
+  validatedAt   DateTime?
+  validatedById String?
+  /// Écriture contre-passée par celle-ci (mécanisme de correction traçable).
+  reversalOfId  String?     @unique
+  sourceType    EntrySource @default(MANUAL)
+  sourceId      String?
+  createdById   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  company    Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  journal    AccountingJournal     @relation(fields: [journalId], references: [id])
+  fiscalYear FiscalYear            @relation(fields: [fiscalYearId], references: [id])
+  reversalOf AccountingEntry?      @relation("EntryReversal", fields: [reversalOfId], references: [id])
+  reversedBy AccountingEntry?      @relation("EntryReversal")
+  lines      AccountingEntryLine[]
+
+  @@unique([fiscalYearId, entryNumber])
+  @@index([companyId, date])
+  @@index([journalId, date])
+  @@index([companyId, sourceType, sourceId])
+  @@map("accounting_entries")
+}
+
+model AccountingEntryLine {
+  id              String    @id @default(cuid())
+  companyId       String
+  entryId         String
+  accountId       String
+  position        Int
+  label           String    @db.VarChar(255)
+  debit           Decimal   @default(0) @db.Decimal(15, 2)
+  credit          Decimal   @default(0) @db.Decimal(15, 2)
+  /// Compte auxiliaire (CompAuxNum / CompAuxLib du FEC)
+  auxiliaryNumber String?   @db.VarChar(20)
+  auxiliaryLabel  String?   @db.VarChar(191)
+  /// Lettrage (EcritureLet / DateLet)
+  letter          String?   @db.VarChar(10)
+  letteredAt      DateTime? @db.Date
+  foreignAmount   Decimal?  @db.Decimal(15, 2)
+  foreignCurrency String?   @db.Char(3)
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entry   AccountingEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account AccountingAccount @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([companyId, accountId])
+  @@index([accountId])
+  @@map("accounting_entry_lines")
+}
+
+enum DepreciationMethod {
+  LINEAR
+  DECLINING
+}
+
+enum FixedAssetStatus {
+  ACTIVE
+  FULLY_DEPRECIATED
+  DISPOSED
+}
+
+model FixedAsset {
+  id                        String             @id @default(cuid())
+  companyId                 String
+  label                     String             @db.VarChar(191)
+  acquisitionDate           DateTime           @db.Date
+  serviceDate               DateTime           @db.Date
+  cost                      Decimal            @db.Decimal(15, 2)
+  residualValue             Decimal            @default(0) @db.Decimal(15, 2)
+  method                    DepreciationMethod @default(LINEAR)
+  durationMonths            Int
+  assetAccountNumber        String             @db.VarChar(20)
+  depreciationAccountNumber String             @db.VarChar(20)
+  expenseAccountNumber      String             @db.VarChar(20)
+  status                    FixedAssetStatus   @default(ACTIVE)
+  disposedAt                DateTime?          @db.Date
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+
+  company       Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depreciations FixedAssetDepreciation[]
+
+  @@index([companyId, status])
+  @@map("fixed_assets")
+}
+
+model FixedAssetDepreciation {
+  id               String   @id @default(cuid())
+  fixedAssetId     String
+  fiscalYearId     String
+  amount           Decimal  @db.Decimal(15, 2)
+  cumulativeAmount Decimal  @db.Decimal(15, 2)
+  entryId          String?
+  createdAt        DateTime @default(now())
+
+  fixedAsset FixedAsset @relation(fields: [fixedAssetId], references: [id], onDelete: Cascade)
+  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([fixedAssetId, fiscalYearId])
+  @@index([fiscalYearId])
+  @@map("fixed_asset_depreciations")
+}
+
+// -----------------------------------------------------------------------------
+// TVA
+// -----------------------------------------------------------------------------
+
+enum VatPeriodStatus {
+  OPEN
+  PREPARED
+  /// Validée par l'utilisateur. La télétransmission n'est jamais automatique.
+  VALIDATED
+  /// Marquée comme déclarée (par l'utilisateur, après dépôt sur son espace professionnel).
+  DECLARED
+}
+
+model VatPeriod {
+  id                  String          @id @default(cuid())
+  companyId           String
+  startDate           DateTime        @db.Date
+  endDate             DateTime        @db.Date
+  regime              VatRegime
+  /// CA3 (réel normal) ou CA12 (réel simplifié)
+  formType            String          @db.VarChar(10)
+  status              VatPeriodStatus @default(OPEN)
+  dueDate             DateTime?       @db.Date
+  collectedVat        Decimal         @default(0) @db.Decimal(15, 2)
+  deductibleVat       Decimal         @default(0) @db.Decimal(15, 2)
+  deductibleVatAssets Decimal         @default(0) @db.Decimal(15, 2)
+  creditCarriedOver   Decimal         @default(0) @db.Decimal(15, 2)
+  netVatDue           Decimal         @default(0) @db.Decimal(15, 2)
+  /// Ventilation par taux et par nature d'opération.
+  breakdown           Json?
+  validatedAt         DateTime?
+  validatedById       String?
+  declaredAt          DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, startDate, endDate])
+  @@index([companyId, status])
+  @@map("vat_periods")
+}
+
+// -----------------------------------------------------------------------------
+// Documents
+// -----------------------------------------------------------------------------
+
+enum DocumentCategory {
+  SALES_INVOICE
+  PURCHASE_INVOICE
+  RECEIPT
+  BANK_STATEMENT
+  TAX
+  LEGAL
+  PAYROLL
+  OTHER
+}
+
+enum OcrStatus {
+  NONE
+  PENDING
+  DONE
+  FAILED
+}
+
+model Document {
+  id                String            @id @default(cuid())
+  companyId         String
+  name              String            @db.VarChar(255)
+  originalFileName  String            @db.VarChar(255)
+  mimeType          String            @db.VarChar(100)
+  sizeBytes         Int
+  /// Clé de l'objet dans le stockage S3 (préfixée par l'identifiant de l'entreprise).
+  storageKey        String            @unique @db.VarChar(512)
+  checksumSha256    String            @db.Char(64)
+  category          DocumentCategory  @default(OTHER)
+  documentDate      DateTime?         @db.Date
+  ocrStatus         OcrStatus         @default(NONE)
+  /// Données extraites (toujours vérifiables et corrigeables par l'utilisateur).
+  ocrData           Json?
+  ocrVerifiedAt     DateTime?
+  suggestedCategory DocumentCategory?
+  uploadedById      String?
+  deletedAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  links   DocumentLink[]
+
+  @@index([companyId, category])
+  @@index([companyId, createdAt])
+  @@index([companyId, checksumSha256])
+  @@map("documents")
+}
+
+enum LinkedEntityType {
+  BANK_TRANSACTION
+  INVOICE
+  QUOTE
+  PURCHASE
+  ACCOUNTING_ENTRY
+  FIXED_ASSET
+}
+
+model DocumentLink {
+  id         String           @id @default(cuid())
+  companyId  String
+  documentId String
+  entityType LinkedEntityType
+  entityId   String
+  createdAt  DateTime         @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, entityType, entityId])
+  @@index([companyId, entityType, entityId])
+  @@map("document_links")
+}
+
+// -----------------------------------------------------------------------------
+// Assistant IA : les suggestions ne deviennent jamais définitives sans validation.
+// -----------------------------------------------------------------------------
+
+enum AiSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model AiSuggestion {
+  id           String             @id @default(cuid())
+  companyId    String
+  kind         String             @db.VarChar(50)
+  entityType   String             @db.VarChar(50)
+  entityId     String
+  payload      Json
+  confidence   Decimal?           @db.Decimal(4, 3)
+  status       AiSuggestionStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime           @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([companyId, entityType, entityId])
+  @@map("ai_suggestions")
+}
+
+// -----------------------------------------------------------------------------
+// Plateforme : notifications, audit, support, paramètres
+// -----------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  companyId String?
+  type      String    @db.VarChar(50)
+  title     String    @db.VarChar(191)
+  body      String?   @db.Text
+  link      String?   @db.VarChar(255)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([companyId])
+  @@map("notifications")
+}
+
+enum AuditActorType {
+  USER
+  SUPER_ADMIN
+  SYSTEM
+}
+
+/// Journal d'audit en ajout seul : aucune route applicative ne modifie ni ne supprime ces lignes.
+model AuditLog {
+  id         String         @id @default(cuid())
+  companyId  String?
+  userId     String?
+  actorType  AuditActorType @default(USER)
+  /// Ex. auth.login, company.update, member.invite
+  action     String         @db.VarChar(80)
+  entityType String?        @db.VarChar(50)
+  entityId   String?        @db.VarChar(64)
+  metadata   Json?
+  ipAddress  String?        @db.VarChar(64)
+  userAgent  String?        @db.VarChar(512)
+  createdAt  DateTime       @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+/// Accès exceptionnel d'un super administrateur aux données d'une entreprise : limité dans le temps, motivé, journalisé.
+model AdminDataAccessGrant {
+  id          String    @id @default(cuid())
+  adminUserId String
+  companyId   String
+  reason      String    @db.VarChar(500)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  admin   User    @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId, expiresAt])
+  @@index([companyId])
+  @@map("admin_data_access_grants")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketSource {
+  APP
+  CONTACT_FORM
+  EMAIL
+}
+
+model SupportTicket {
+  id           String         @id @default(cuid())
+  /// Référence lisible communiquée au demandeur.
+  reference    String         @unique @db.VarChar(20)
+  userId       String?
+  companyId    String?
+  source       TicketSource   @default(APP)
+  /// Coordonnées du demandeur lorsqu'il n'est pas connecté (formulaire de contact).
+  contactName  String?        @db.VarChar(191)
+  contactEmail String?        @db.VarChar(191)
+  subject      String         @db.VarChar(191)
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(NORMAL)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  closedAt     DateTime?
+
+  user     User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company  Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  messages SupportTicketMessage[]
+
+  @@index([status, priority])
+  @@index([userId])
+  @@index([companyId])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  authorId  String?
+  isStaff   Boolean  @default(false)
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+model ApplicationSetting {
+  key         String   @id @db.VarChar(100)
+  value       Json
+  description String?  @db.VarChar(255)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("application_settings")
+}
+
+enum AnnouncementLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model SystemAnnouncement {
+  id        String            @id @default(cuid())
+  title     String            @db.VarChar(191)
+  body      String            @db.Text
+  level     AnnouncementLevel @default(INFO)
+  startsAt  DateTime          @default(now())
+  endsAt    DateTime?
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+
+  @@index([isActive, startsAt])
+  @@map("system_announcements")
+}
+
+model ApplicationError {
+  id        String   @id @default(cuid())
+  message   String   @db.Text
+  stack     String?  @db.Text
+  path      String?  @db.VarChar(255)
+  method    String?  @db.VarChar(10)
+  userId    String?
+  companyId String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("application_errors")
+}
+
+/// Compteurs de limitation de débit (fenêtre fixe), partagés entre instances.
+model RateLimitCounter {
+  key         String   @id @db.VarChar(191)
+  count       Int      @default(0)
+  windowStart DateTime
+
+  @@index([windowStart])
+  @@map("rate_limit_counters")
+}

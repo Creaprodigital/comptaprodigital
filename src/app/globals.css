@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Identité visuelle ComptaPro Digital
+ *   Bleu nuit #14213D · Bleu principal #2563EB · Vert financier #10B981
+ *   Blanc #FFFFFF · Gris clair #F8FAFC
+ */
+:root {
+  --radius: 0.75rem;
+
+  --background: #f8fafc;
+  --foreground: #14213d;
+  --card: #ffffff;
+  --card-foreground: #14213d;
+  --popover: #ffffff;
+  --popover-foreground: #14213d;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f8;
+  --secondary-foreground: #14213d;
+  --muted: #f1f5f9;
+  --muted-foreground: #55637b;
+  --accent: #eff5ff;
+  --accent-foreground: #1d4fd7;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2563eb;
+
+  --navy: #14213d;
+  --navy-foreground: #ffffff;
+  --success: #10b981;
+  --success-foreground: #047857;
+  --success-soft: #ecfdf5;
+  --warning: #d97706;
+  --warning-foreground: #b45309;
+  --warning-soft: #fffbeb;
+  --destructive: #dc2626;
+  --destructive-foreground: #b91c1c;
+  --destructive-soft: #fef2f2;
+
+  --sidebar: #14213d;
+  --sidebar-foreground: #dbe4f3;
+  --sidebar-muted: #93a3bf;
+  --sidebar-accent: #1f3058;
+  --sidebar-border: #24365f;
+
+  /* Séries de graphiques (validées daltonisme et contraste, modes clair et sombre) */
+  --chart-revenue: #2563eb;
+  --chart-expenses: #eb6834;
+  --chart-grid: #e2e8f0;
+  --chart-track: #eef2f8;
+}
+
+.dark {
+  --background: #0b1220;
+  --foreground: #e6edf7;
+  --card: #111a2e;
+  --card-foreground: #e6edf7;
+  --popover: #131d33;
+  --popover-foreground: #e6edf7;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #1a2540;
+  --secondary-foreground: #e6edf7;
+  --muted: #16203a;
+  --muted-foreground: #9aa9c2;
+  --accent: #172648;
+  --accent-foreground: #93b8ff;
+  --border: #223050;
+  --input: #2c3c61;
+  --ring: #3b82f6;
+
+  --navy: #0e1627;
+  --navy-foreground: #ffffff;
+  --success: #10b981;
+  --success-foreground: #34d399;
+  --success-soft: #0c2a26;
+  --warning: #f59e0b;
+  --warning-foreground: #fbbf24;
+  --warning-soft: #2b2110;
+  --destructive: #ef4444;
+  --destructive-foreground: #f87171;
+  --destructive-soft: #2d1519;
+
+  --sidebar: #0e1627;
+  --sidebar-foreground: #dbe4f3;
+  --sidebar-muted: #8494b2;
+  --sidebar-accent: #1a2744;
+  --sidebar-border: #1c2946;
+
+  --chart-revenue: #3b82f6;
+  --chart-expenses: #d95926;
+  --chart-grid: #223050;
+  --chart-track: #1a2540;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-navy: var(--navy);
+  --color-navy-foreground: var(--navy-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-chart-revenue: var(--chart-revenue);
+  --color-chart-expenses: var(--chart-expenses);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-track: var(--chart-track);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+
+  --shadow-card: 0 1px 2px rgb(20 33 61 / 0.04), 0 4px 16px -4px rgb(20 33 61 / 0.06);
+  --shadow-elevated: 0 12px 40px -12px rgb(20 33 61 / 0.25);
+
+  --animate-fade-up: fade-up 0.5s ease-out both;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 25%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Chiffres alignés dans les tableaux et les indicateurs. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
