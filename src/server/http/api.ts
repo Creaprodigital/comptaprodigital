@@ -1,3 +1,4 @@
+import { unstable_rethrow } from "next/navigation";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { env } from "@/server/env";
@@ -156,6 +157,8 @@ export function publicRoute<
       const auth = await resolveSession();
       return toResponse(await handler({ ...base, auth }));
     } catch (error) {
+      // Les signaux internes de Next.js (sortie du prérendu, redirections) ne sont pas des erreurs applicatives.
+      unstable_rethrow(error);
       return errorResponse(error, request);
     }
   };
@@ -174,6 +177,8 @@ export function authRoute<
       if (!auth) throw errors.unauthenticated();
       return toResponse(await handler({ ...base, auth }));
     } catch (error) {
+      // Les signaux internes de Next.js (sortie du prérendu, redirections) ne sont pas des erreurs applicatives.
+      unstable_rethrow(error);
       return errorResponse(error, request);
     }
   };
