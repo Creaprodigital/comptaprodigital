@@ -344,10 +344,10 @@ export const solutions: Solution[] = [
 ];
 
 export const comparisonRows: Array<{ label: string; values: [boolean | string, boolean | string, boolean | string] }> = [
-  { label: "Devis et factures", values: [true, true, true] },
+  { label: "Devis, factures et avoirs", values: [true, true, true] },
   { label: "Tableau de bord", values: [true, true, true] },
   { label: "Gestion des clients", values: [true, true, true] },
-  { label: "Acomptes, avoirs et factures récurrentes", values: [false, true, true] },
+  { label: "Factures d'acompte et factures récurrentes", values: [false, true, true] },
   { label: "Import de relevés bancaires", values: [false, true, true] },
   { label: "Comptabilité et journaux", values: [false, true, true] },
   { label: "Suivi et préparation de la TVA", values: [false, true, true] },

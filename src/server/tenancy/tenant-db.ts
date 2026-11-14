@@ -39,6 +39,7 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set<Prisma.ModelName>([
   "DocumentLink",
   "AiSuggestion",
   "CompanyInvitation",
+  "CompanyLogo",
 ]);
 
 const WHERE_OPERATIONS = new Set([

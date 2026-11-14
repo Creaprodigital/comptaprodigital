@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Sortie autonome pour l'image Docker (activée par le Dockerfile).
   output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
-  serverExternalPackages: ["@node-rs/argon2", "@prisma/client"],
+  serverExternalPackages: ["@node-rs/argon2", "@prisma/client", "pdfkit"],
   turbopack: {
     rules: {
       "*.css": {

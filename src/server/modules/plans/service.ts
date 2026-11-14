@@ -59,3 +59,17 @@ export async function getUserPlanLimits(userId: string): Promise<{ planKey: stri
   if (!subscription) return null;
   return { planKey: subscription.plan.key, planName: subscription.plan.name, limits: parsePlanLimits(subscription.plan) };
 }
+
+/**
+ * Indique si la formule du propriétaire de l'entreprise inclut un module
+ * (ex. « invoicing-advanced » pour les acomptes et les factures récurrentes).
+ */
+export async function companyHasModule(companyId: string, moduleKey: string): Promise<boolean> {
+  const owner = await prisma.companyUser.findFirst({
+    where: { companyId, status: "ACTIVE", role: { key: "OWNER" } },
+    select: { userId: true },
+  });
+  if (!owner) return false;
+  const plan = await getUserPlanLimits(owner.userId);
+  return plan?.limits.modules.includes(moduleKey) ?? false;
+}

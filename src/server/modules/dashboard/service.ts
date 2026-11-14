@@ -228,10 +228,10 @@ export async function estimateVat(companyId: string, from: IsoDate, to: IsoDate)
 async function receivables(companyId: string, today: IsoDate) {
   const [unpaid, overdue] = await Promise.all([
     prisma.$queryRaw<CountSumRow[]>`
-      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid) AS total FROM invoices
+      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid - creditedAmount) AS total FROM invoices
       WHERE companyId = ${companyId} AND type IN ('INVOICE', 'DEPOSIT') AND status IN (${openStatusesSql})`,
     prisma.$queryRaw<CountSumRow[]>`
-      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid) AS total FROM invoices
+      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid - creditedAmount) AS total FROM invoices
       WHERE companyId = ${companyId} AND type IN ('INVOICE', 'DEPOSIT') AND status IN (${openStatusesSql})
         AND dueDate IS NOT NULL AND dueDate < ${today}`,
   ]);
@@ -331,7 +331,7 @@ export async function getDashboard(
           WHERE l.companyId = t.companyId AND l.entityType = 'BANK_TRANSACTION' AND l.entityId = t.id
         )`,
     prisma.$queryRaw<CountSumRow[]>`
-      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid) AS total FROM invoices
+      SELECT COUNT(*) AS count, SUM(totalInclTax - amountPaid - creditedAmount) AS total FROM invoices
       WHERE companyId = ${companyId} AND type IN ('INVOICE', 'DEPOSIT') AND status IN (${openStatusesSql})
         AND dueDate BETWEEN ${today} AND ${soon}`,
     prisma.$queryRaw<CountSumRow[]>`

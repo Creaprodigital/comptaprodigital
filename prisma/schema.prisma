@@ -226,51 +226,58 @@ enum CompanyStatus {
 }
 
 model Company {
-  id                     String         @id @default(cuid())
-  name                   String         @db.VarChar(191)
-  tradeName              String?        @db.VarChar(191)
-  siren                  String?        @db.Char(9)
-  siret                  String?        @db.Char(14)
-  vatNumber              String?        @db.VarChar(20)
-  nafCode                String?        @db.VarChar(10)
-  rcsCity                String?        @db.VarChar(100)
-  shareCapital           Decimal?       @db.Decimal(15, 2)
-  legalForm              LegalForm
-  taxRegime              TaxRegime
-  vatRegime              VatRegime
-  vatExigibility         VatExigibility @default(ENCAISSEMENTS)
-  accountingMode         AccountingMode @default(DOUBLE_ENTRY)
+  id                       String         @id @default(cuid())
+  name                     String         @db.VarChar(191)
+  tradeName                String?        @db.VarChar(191)
+  siren                    String?        @db.Char(9)
+  siret                    String?        @db.Char(14)
+  vatNumber                String?        @db.VarChar(20)
+  nafCode                  String?        @db.VarChar(10)
+  rcsCity                  String?        @db.VarChar(100)
+  shareCapital             Decimal?       @db.Decimal(15, 2)
+  legalForm                LegalForm
+  taxRegime                TaxRegime
+  vatRegime                VatRegime
+  vatExigibility           VatExigibility @default(ENCAISSEMENTS)
+  accountingMode           AccountingMode @default(DOUBLE_ENTRY)
   /// Mois d'ouverture de l'exercice comptable (1 = janvier).
-  fiscalYearStartMonth   Int            @default(1) @db.TinyInt
-  registrationDate       DateTime?      @db.Date
-  addressLine1           String?        @db.VarChar(191)
-  addressLine2           String?        @db.VarChar(191)
-  postalCode             String?        @db.VarChar(10)
-  city                   String?        @db.VarChar(100)
-  country                String         @default("FR") @db.Char(2)
-  email                  String?        @db.VarChar(191)
-  phone                  String?        @db.VarChar(30)
-  website                String?        @db.VarChar(191)
-  currency               String         @default("EUR") @db.Char(3)
+  fiscalYearStartMonth     Int            @default(1) @db.TinyInt
+  registrationDate         DateTime?      @db.Date
+  addressLine1             String?        @db.VarChar(191)
+  addressLine2             String?        @db.VarChar(191)
+  postalCode               String?        @db.VarChar(10)
+  city                     String?        @db.VarChar(100)
+  country                  String         @default("FR") @db.Char(2)
+  email                    String?        @db.VarChar(191)
+  phone                    String?        @db.VarChar(30)
+  website                  String?        @db.VarChar(191)
+  currency                 String         @default("EUR") @db.Char(3)
   // Paramètres de facturation
-  invoicePrefix          String         @default("F") @db.VarChar(10)
-  quotePrefix            String         @default("D") @db.VarChar(10)
-  creditNotePrefix       String         @default("A") @db.VarChar(10)
-  defaultPaymentTermDays Int            @default(30)
-  latePenaltyRate        Decimal?       @db.Decimal(5, 2)
-  invoiceFooter          String?        @db.Text
+  invoicePrefix            String         @default("F") @db.VarChar(10)
+  quotePrefix              String         @default("D") @db.VarChar(10)
+  creditNotePrefix         String         @default("A") @db.VarChar(10)
+  defaultPaymentTermDays   Int            @default(30)
+  latePenaltyRate          Decimal?       @db.Decimal(5, 2)
+  invoiceFooter            String?        @db.Text
   /// IBAN de l'entreprise affiché sur les factures — chiffré au repos.
-  ibanEncrypted          String?        @db.VarChar(512)
-  bic                    String?        @db.VarChar(11)
-  logoDocumentId         String?
-  status                 CompanyStatus  @default(ACTIVE)
-  suspendedAt            DateTime?
-  suspendedReason        String?        @db.VarChar(255)
-  createdById            String
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
+  ibanEncrypted            String?        @db.VarChar(512)
+  bic                      String?        @db.VarChar(11)
+  /// Personnalisation des documents commerciaux
+  invoiceAccentColor       String         @default("#2563EB") @db.VarChar(7)
+  quoteValidityDays        Int            @default(30)
+  earlyPaymentDiscountNote String?        @db.VarChar(255)
+  /// Relances automatiques des factures échues : délais en jours après l'échéance (ex. [7, 15, 30]).
+  remindersEnabled         Boolean        @default(false)
+  reminderDelaysDays       Json?
+  status                   CompanyStatus  @default(ACTIVE)
+  suspendedAt              DateTime?
+  suspendedReason          String?        @db.VarChar(255)
+  createdById              String
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 
   createdBy             User                   @relation("CompanyCreator", fields: [createdById], references: [id])
+  logo                  CompanyLogo?
   members               CompanyUser[]
   invitations           CompanyInvitation[]
   fiscalYears           FiscalYear[]
@@ -333,6 +340,19 @@ model CompanyUser {
   @@index([userId])
   @@index([roleId])
   @@map("company_users")
+}
+
+/// Logo affiché sur les devis et factures (image de petite taille, stockée en base).
+model CompanyLogo {
+  companyId String   @id
+  mimeType  String   @db.VarChar(50)
+  data      Bytes    @db.MediumBlob
+  sizeBytes Int
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_logos")
 }
 
 model CompanyInvitation {
@@ -713,6 +733,8 @@ model Invoice {
   totalVat            Decimal           @default(0) @db.Decimal(15, 2)
   totalInclTax        Decimal           @default(0) @db.Decimal(15, 2)
   amountPaid          Decimal           @default(0) @db.Decimal(15, 2)
+  /// Total TTC des avoirs émis sur cette facture (vient en déduction du reste à encaisser).
+  creditedAmount      Decimal           @default(0) @db.Decimal(15, 2)
   currency            String            @default("EUR") @db.Char(3)
   /// Instantané figé (émetteur + client) au moment de l'émission.
   partiesSnapshot     Json?
@@ -818,6 +840,8 @@ model RecurringInvoice {
   /// Modèle de facture (lignes, conditions) rejoué à chaque échéance — crée un brouillon ou émet selon autoIssue.
   template    Json
   autoIssue   Boolean             @default(false)
+  /// Envoi automatique par e-mail après émission.
+  autoSend    Boolean             @default(false)
   status      RecurringStatus     @default(ACTIVE)
   lastRunAt   DateTime?
   createdAt   DateTime            @default(now())

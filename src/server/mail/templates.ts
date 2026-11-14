@@ -23,18 +23,22 @@ type Layout = {
   action?: { label: string; url: string };
   footnote?: string;
   replyTo?: string;
+  /** Signature du message ; par défaut, l'équipe de la plateforme. */
+  signature?: string | null;
 };
 
-function render({ to, subject, greeting, paragraphs, action, footnote, replyTo }: Layout): MailMessage {
+function render({ to, subject, greeting, paragraphs, action, footnote, replyTo, signature }: Layout): MailMessage {
+  const signatureLine = signature === undefined ? `— L'équipe ${siteConfig.name}` : signature;
   const text = [
     greeting,
     "",
-    ...paragraphs,
-    ...(action ? ["", `${action.label} : ${action.url}`] : []),
-    ...(footnote ? ["", footnote] : []),
-    "",
-    `— L'équipe ${siteConfig.name}`,
-  ].join("\n");
+    ...paragraphs.flatMap((p) => [p, ""]),
+    ...(action ? [`${action.label} : ${action.url}`, ""] : []),
+    ...(footnote ? [footnote, ""] : []),
+    ...(signatureLine ? [signatureLine] : []),
+  ]
+    .join("\n")
+    .trimEnd();
 
   const html = `<!doctype html>
 <html lang="fr">
@@ -42,8 +46,8 @@ function render({ to, subject, greeting, paragraphs, action, footnote, replyTo }
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;">
       <tr><td style="padding:24px 32px;border-bottom:1px solid #E2E8F0;font-size:18px;font-weight:700;color:#14213D;">${escapeHtml(siteConfig.name)}</td></tr>
       <tr><td style="padding:32px;font-size:15px;line-height:1.6;">
-        <p style="margin:0 0 16px;">${escapeHtml(greeting)}</p>
-        ${paragraphs.map((p) => `<p style="margin:0 0 16px;">${escapeHtml(p)}</p>`).join("\n        ")}
+        <p style="margin:0 0 16px;">${escapeHtml(greeting).replace(/\n/g, "<br>")}</p>
+        ${paragraphs.map((p) => `<p style="margin:0 0 16px;">${escapeHtml(p).replace(/\n/g, "<br>")}</p>`).join("\n        ")}
         ${
           action
             ? `<p style="margin:24px 0;"><a href="${escapeHtml(action.url)}" style="display:inline-block;background:#2563EB;color:#FFFFFF;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">${escapeHtml(action.label)}</a></p>
@@ -127,6 +131,20 @@ export const mailTemplates = {
       action: { label: "Voir l'invitation", url: appUrl(`/invitation/${encodeURIComponent(token)}`) },
       footnote: "Si vous ne connaissez pas l'expéditeur, ignorez ce message.",
     });
+  },
+
+  /** Envoi d'un devis ou d'une facture : le message est rédigé par l'utilisateur, le PDF est joint. */
+  documentEmail(input: { to: string; subject: string; message: string; senderName: string; replyTo?: string | null; cc?: string }) {
+    const mail = render({
+      to: input.to,
+      subject: input.subject,
+      greeting: input.message.split(/\n{2,}/)[0],
+      paragraphs: input.message.split(/\n{2,}/).slice(1),
+      footnote: `Message envoyé par ${input.senderName} via ${siteConfig.name}. Le document est joint à cet e-mail au format PDF.`,
+      replyTo: input.replyTo ?? undefined,
+      signature: null,
+    });
+    return { ...mail, cc: input.cc };
   },
 
   contactNotification(to: string, input: { name: string; email: string; subject: string; message: string; reference: string }) {

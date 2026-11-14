@@ -19,7 +19,7 @@ const PLANS = [
     isFeatured: false,
     sortOrder: 1,
     features: [
-      "Devis et factures",
+      "Devis, factures et avoirs",
       "Tableau de bord",
       "Gestion des clients",
       "1 entreprise, 1 utilisateur",
@@ -37,7 +37,7 @@ const PLANS = [
     isFeatured: true,
     sortOrder: 2,
     features: [
-      "Facturation complète : acomptes, avoirs, récurrence",
+      "Facturation complète : acomptes et factures récurrentes",
       "Comptabilité et journaux",
       "Suivi et préparation de la TVA",
       "Import de relevés bancaires",
@@ -47,7 +47,7 @@ const PLANS = [
     limits: {
       maxCompanies: 1,
       maxMembers: 2,
-      modules: ["dashboard", "invoicing", "customers", "accounting", "vat", "bank", "documents"],
+      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents"],
     },
   },
   {
@@ -70,7 +70,7 @@ const PLANS = [
     limits: {
       maxCompanies: 10,
       maxMembers: null,
-      modules: ["dashboard", "invoicing", "customers", "accounting", "vat", "bank", "documents", "automation", "exports", "priority-support"],
+      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents", "automation", "exports", "priority-support"],
     },
   },
 ] as const;
