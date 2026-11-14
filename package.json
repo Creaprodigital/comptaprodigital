@@ -23,6 +23,7 @@
     "jobs:daily": "tsx scripts/run-jobs.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1169.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@node-rs/argon2": "^2.2.2",
@@ -30,6 +31,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
+    "fast-xml-parser": "^5.12.1",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.72.0",
     "next": "16.4.6",
     "next-themes": "^0.4.6",
@@ -65,6 +68,7 @@
     "mailparser": "^3.14.3",
     "pdf-parse": "^2.4.5",
     "prettier": "^3.10.1",
+    "s3rver": "^3.7.1",
     "smtp-server": "^3.21.4",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",

@@ -875,6 +875,8 @@ model Payment {
   reference         String?       @db.VarChar(191)
   note              String?       @db.VarChar(255)
   bankTransactionId String?
+  /// Règlement créé par un rapprochement bancaire (supprimé si le rapprochement est annulé).
+  createdFromBank   Boolean       @default(false)
   createdById       String?
   createdAt         DateTime      @default(now())
 
@@ -1059,6 +1061,8 @@ model BankImport {
   bankAccountId  String
   format         BankImportFormat
   fileName       String           @db.VarChar(255)
+  /// Empreinte du fichier importé : signale la réimportation d'un même relevé.
+  fileChecksum   String?          @db.Char(64)
   rowCount       Int              @default(0)
   importedCount  Int              @default(0)
   duplicateCount Int              @default(0)
