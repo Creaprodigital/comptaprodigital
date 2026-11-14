@@ -55,4 +55,6 @@ export const RATE_LIMITS = {
   contact: { name: "contact", limit: 5, windowSeconds: 60 * 60 },
   companySearch: { name: "insee.search", limit: 30, windowSeconds: 60 },
   invitations: { name: "members.invite", limit: 20, windowSeconds: 60 * 60 },
+  documentEmail: { name: "documents.send", limit: 60, windowSeconds: 60 * 60 },
+  exports: { name: "exports", limit: 30, windowSeconds: 60 * 60 },
 } satisfies Record<string, RateLimitRule>;
