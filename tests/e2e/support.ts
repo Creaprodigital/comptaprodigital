@@ -15,7 +15,7 @@ export function uniqueClientIp(): string {
   return `198.51.100.${1 + Math.floor(Math.random() * 250)}, 10.0.0.${1 + Math.floor(Math.random() * 250)}`;
 }
 
-type CapturedMail = { to: string; subject: string; text: string };
+type CapturedMail = { to: string; subject: string; text: string; attachments?: Array<{ filename: string; contentType: string; size: number; isPdf: boolean }> };
 
 /** Attend l'e-mail le plus récent adressé à `to` dont l'objet contient `subject`. */
 export async function waitForMail(to: string, subject: string): Promise<CapturedMail> {

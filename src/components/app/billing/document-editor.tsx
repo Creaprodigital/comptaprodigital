@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Loader2Icon, PlusIcon, Trash2Icon, UserPlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { ProductView, VatRateView } from "@/server/modules/products/service";
@@ -66,9 +66,9 @@ type Props = {
   canCreateCustomer: boolean;
 };
 
-let lineCounter = 0;
-export function newEditorLine(vatRate: string, overrides: Partial<EditorLine> = {}): EditorLine {
-  return { key: `l${++lineCounter}`, productId: "", description: "", quantity: "1", unit: "", unitPriceExclTax: "", discountRate: "0", vatRate, ...overrides };
+/** Ligne vide. Les clés sont déterministes (rang de création) pour que le rendu serveur et le rendu client coïncident. */
+function blankLine(key: string, vatRate: string, overrides: Partial<EditorLine> = {}): EditorLine {
+  return { key, productId: "", description: "", quantity: "1", unit: "", unitPriceExclTax: "", discountRate: "0", vatRate, ...overrides };
 }
 
 /** « 1 234,5 » → « 1234.5 » ; une saisie incomplète vaut zéro pour l'aperçu des totaux. */
@@ -101,7 +101,9 @@ export function DocumentEditor({ kind, companyId, currency, franchise, customers
   const [operationCategory, setOperationCategory] = useState(initial.operationCategory);
   const [discountType, setDiscountType] = useState<DiscountType>(initial.discountType);
   const [discountValue, setDiscountValue] = useState(initial.discountValue);
-  const [lines, setLines] = useState<EditorLine[]>(initial.lines.length ? initial.lines : [newEditorLine(defaultVat)]);
+  const [lines, setLines] = useState<EditorLine[]>(initial.lines.length ? initial.lines : [blankLine("n0", defaultVat)]);
+  const nextLineRank = useRef(1);
+  const newLineKey = () => `n${nextLineRank.current++}`;
   const [label, setLabel] = useState(initial.label ?? "");
   const [frequency, setFrequency] = useState(initial.frequency ?? "MONTHLY");
   const [autoIssue, setAutoIssue] = useState(initial.autoIssue ?? false);
@@ -134,7 +136,7 @@ export function DocumentEditor({ kind, companyId, currency, franchise, customers
   function insertProduct(productId: string) {
     const product = products.find((p) => p.id === productId);
     if (!product) return;
-    const line = newEditorLine(defaultVat, {
+    const line = blankLine(newLineKey(), defaultVat, {
       productId: product.id,
       description: product.description ? `${product.name}\n${product.description}` : product.name,
       unit: product.unit ?? "",
@@ -299,8 +301,8 @@ export function DocumentEditor({ kind, companyId, currency, franchise, customers
             {lines.map((line, index) => {
               const lineTotal = totals.value?.lines[index]?.totalExclTax;
               return (
-                <li key={line.key} className="grid gap-3 rounded-xl border bg-muted/30 p-3 lg:grid-cols-[minmax(0,1fr)_84px_84px_112px_84px_128px_112px_36px] lg:items-start">
-                  <div className="grid gap-1">
+                <li key={line.key} className="grid grid-cols-2 gap-3 rounded-xl border bg-muted/30 p-3 lg:grid-cols-[minmax(0,1fr)_84px_84px_112px_84px_128px_112px_36px] lg:items-start">
+                  <div className="col-span-2 grid gap-1 lg:col-span-1">
                     <Label htmlFor={`${line.key}-description`} className="text-xs text-muted-foreground">Désignation</Label>
                     <Textarea id={`${line.key}-description`} value={line.description} onChange={(e) => updateLine(line.key, { description: e.target.value })} rows={1} className="min-h-10 py-2" required />
                   </div>
@@ -340,7 +342,7 @@ export function DocumentEditor({ kind, companyId, currency, franchise, customers
               );
             })}
           </ol>
-          <Button type="button" variant="outline" className="justify-self-start" onClick={() => setLines((current) => [...current, newEditorLine(defaultVat)])}>
+          <Button type="button" variant="outline" className="justify-self-start" onClick={() => setLines((current) => [...current, blankLine(newLineKey(), defaultVat)])}>
             <PlusIcon /> Ajouter une ligne
           </Button>
         </CardContent>

@@ -2,6 +2,7 @@
 # ComptaPro Digital — production (VPS Ubuntu)
 #   docker compose up -d                 # application, base de données, HTTPS
 #   docker compose run --rm migrate      # migrations + données de référence
+#   docker compose run --rm jobs         # tâches quotidiennes (récurrence, relances)
 # Les secrets sont lus dans le fichier .env (jamais versionné).
 # =============================================================================
 name: comptapro
@@ -34,6 +35,24 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  # Tâches quotidiennes : factures récurrentes, relances automatiques, purges.
+  #   docker compose run --rm jobs        (à planifier une fois par jour avec cron)
+  jobs:
+    image: ${APP_TOOLS_IMAGE:-comptapro-tools:latest}
+    build:
+      context: .
+      target: tools
+    profiles: [tools]
+    command: ["npx", "tsx", "scripts/run-jobs.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_healthy

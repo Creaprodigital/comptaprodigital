@@ -21,7 +21,8 @@ export default async function globalSetup() {
         .then(async (mail) => {
           const to = Array.isArray(mail.to) ? mail.to.map((a) => a.text).join(", ") : (mail.to?.text ?? "");
           const file = path.join(MAIL_DIR, `${Date.now()}-${String(++counter).padStart(4, "0")}.json`);
-          await writeFile(file, JSON.stringify({ to, subject: mail.subject ?? "", text: mail.text ?? "" }), "utf8");
+          const attachments = mail.attachments.map((a) => ({ filename: a.filename ?? "", contentType: a.contentType, size: a.size, isPdf: a.content.subarray(0, 5).toString() === "%PDF-" }));
+          await writeFile(file, JSON.stringify({ to, subject: mail.subject ?? "", text: mail.text ?? "", attachments }), "utf8");
           callback();
         })
         .catch((error) => callback(error));
