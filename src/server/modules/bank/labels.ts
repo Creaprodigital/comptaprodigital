@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import Decimal from "decimal.js";
 import type { ParsedTransaction } from "./parsers/types";
 
 /** Libellé normalisé pour les comparaisons : majuscules, sans accents ni ponctuation superflue. */
@@ -40,9 +41,9 @@ export function ruleMatches(rule: RuleLike, transaction: { label: string; amount
   const negative = transaction.amount.startsWith("-");
   if (rule.direction === "IN" && negative) return false;
   if (rule.direction === "OUT" && !negative) return false;
-  const absolute = Math.abs(Number(transaction.amount));
-  if (rule.amountMin !== null && absolute < Number(rule.amountMin.toString())) return false;
-  if (rule.amountMax !== null && absolute > Number(rule.amountMax.toString())) return false;
+  const absolute = new Decimal(transaction.amount).abs();
+  if (rule.amountMin !== null && absolute.lessThan(rule.amountMin.toString())) return false;
+  if (rule.amountMax !== null && absolute.greaterThan(rule.amountMax.toString())) return false;
   const label = normalizeLabel(transaction.label);
   const pattern = normalizeLabel(rule.pattern);
   if (!pattern) return false;
@@ -56,4 +57,10 @@ export function ruleMatches(rule: RuleLike, transaction: { label: string; amount
     default:
       return false;
   }
+}
+
+/** Part de TVA comprise dans un montant TTC, pour un taux donné (arrondie au centime). */
+export function vatIncluded(amount: string | { toString(): string }, ratePercent: string | { toString(): string }): string {
+  const rate = new Decimal(ratePercent.toString());
+  return new Decimal(amount.toString()).abs().times(rate).dividedBy(rate.plus(100)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
 }

@@ -34,12 +34,17 @@ const envSchema = z
     /** Clé d'API Sirene (portail api.insee.fr). Sans clé, l'annuaire public des entreprises est utilisé. */
     INSEE_API_KEY: z.string().optional(),
 
-    // Renseignés dans les phases ultérieures (documents, abonnements).
+    /** Stockage des documents : disque local (volume du serveur) ou stockage objet compatible S3. */
+    STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+    STORAGE_LOCAL_DIR: z.string().default(".storage"),
     S3_ENDPOINT: z.string().optional(),
     S3_REGION: z.string().optional(),
     S3_BUCKET: z.string().optional(),
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
+    /** Adressage « chemin » (MinIO, la plupart des offres compatibles S3) plutôt que par sous-domaine. */
+    S3_FORCE_PATH_STYLE: booleanString.default(true),
+    // Renseignés dans une phase ultérieure (abonnements).
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
   })
@@ -50,6 +55,11 @@ const envSchema = z
         path: ["SMTP_HOST"],
         message: "SMTP_HOST est requis en production (vérification d'e-mail, réinitialisation de mot de passe)",
       });
+    }
+    if (value.STORAGE_DRIVER === "s3") {
+      for (const key of ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const) {
+        if (!value[key]) ctx.addIssue({ code: "custom", path: [key], message: `${key} est requis lorsque STORAGE_DRIVER vaut « s3 »` });
+      }
     }
   });
 

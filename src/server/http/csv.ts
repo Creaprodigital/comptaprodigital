@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 export function toCsv(headers: string[], rows: Array<Array<string | number | null | undefined>>): string {
   const escape = (value: string | number | null | undefined): string => {
     let cell = value === null || value === undefined ? "" : String(value);
-    if (typeof value === "string" && /^[=+\-@\t\r]/.test(cell)) cell = `'${cell}`;
+    // Neutralisation des formules, sauf pour un nombre signé (« -115,20 »), qui doit rester un nombre dans le tableur.
+    if (typeof value === "string" && /^[=+\-@\t\r]/.test(cell) && !/^[+-]?\d+([.,]\d+)?$/.test(cell)) cell = `'${cell}`;
     return /[";\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
   };
   return "﻿" + [headers, ...rows].map((row) => row.map(escape).join(";")).join("\r\n") + "\r\n";

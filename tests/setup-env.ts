@@ -12,3 +12,5 @@ process.env.APP_URL = "http://localhost:3000";
 process.env.APP_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 delete process.env.SMTP_HOST;
 delete process.env.INSEE_API_KEY;
+process.env.STORAGE_DRIVER = "local";
+process.env.STORAGE_LOCAL_DIR = ".storage-test";

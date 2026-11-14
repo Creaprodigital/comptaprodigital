@@ -49,3 +49,8 @@ next-env.d.ts
 
 # prisma
 /prisma/*.db
+
+# documents stockés localement (développement)
+/.storage/
+/.storage-test/
+/.storage-e2e/

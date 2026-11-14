@@ -325,7 +325,9 @@ export async function getDashboard(
     db.bankTransaction.count({ where: { status: "TO_REVIEW" } }),
     prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*) AS count FROM bank_transactions t
+      LEFT JOIN transaction_categories c ON c.id = t.categoryId
       WHERE t.companyId = ${companyId} AND t.amount < 0
+        AND (t.categoryId IS NULL OR c.kind IN ('EXPENSE', 'PAYROLL'))
         AND NOT EXISTS (
           SELECT 1 FROM document_links l
           WHERE l.companyId = t.companyId AND l.entityType = 'BANK_TRANSACTION' AND l.entityId = t.id

@@ -7,16 +7,16 @@ import { isValidSiren, isValidSiret, normalizeDigits } from "@/lib/identifiers";
 /** Schémas de validation de la facturation, partagés entre les formulaires et l'API. */
 
 /** Rend facultatives les propriétés pouvant valoir `undefined` (plus commode pour construire une entrée dans le code). */
-type Loose<T> = { [K in keyof T as undefined extends T[K] ? K : never]?: T[K] } & { [K in keyof T as undefined extends T[K] ? never : K]: T[K] };
+export type Loose<T> = { [K in keyof T as undefined extends T[K] ? K : never]?: T[K] } & { [K in keyof T as undefined extends T[K] ? never : K]: T[K] };
 
-const text = (max: number) =>
+export const text = (max: number) =>
   z
     .string()
     .trim()
     .max(max, "Texte trop long")
     .regex(/^[^<>]*$/, "Caractères non autorisés");
 
-const optionalText = (max: number) =>
+export const optionalText = (max: number) =>
   z
     .union([text(max), z.null()])
     .optional()
@@ -44,20 +44,20 @@ export function decimalString(options: { min?: number; max?: number; scale?: num
 }
 
 /** Décimal facultatif : chaîne vide, null ou absent → undefined. */
-function optionalDecimal(options: Parameters<typeof decimalString>[0]) {
+export function optionalDecimal(options: Parameters<typeof decimalString>[0]) {
   return z
     .union([z.literal(""), z.null(), decimalString(options)])
     .optional()
     .transform((v) => (v ? v : undefined));
 }
 
-const isoDate = z.string().refine(isIsoDate, "Date invalide");
-const optionalIsoDate = z
+export const isoDate = z.string().refine(isIsoDate, "Date invalide");
+export const optionalIsoDate = z
   .union([isoDate, z.literal(""), z.null()])
   .optional()
   .transform((v) => (v ? v : undefined));
 
-const id = z.string().min(1).max(40);
+export const id = z.string().min(1).max(40);
 
 // --- Clients et fournisseurs --------------------------------------------------
 

@@ -1,3 +1,4 @@
+import { AppError } from "@/server/http/errors";
 import type { SubscriptionPlan } from "@prisma/client";
 import { prisma } from "@/server/db";
 
@@ -72,4 +73,16 @@ export async function companyHasModule(companyId: string, moduleKey: string): Pr
   if (!owner) return false;
   const plan = await getUserPlanLimits(owner.userId);
   return plan?.limits.modules.includes(moduleKey) ?? false;
+}
+
+const MODULE_NOTICES: Record<string, string> = {
+  bank: "Le suivi bancaire est inclus à partir de la formule Pro.",
+  documents: "La gestion documentaire est incluse à partir de la formule Pro.",
+};
+
+/** Refuse l'accès à un module que la formule de l'entreprise n'inclut pas. */
+export async function requireModule(companyId: string, moduleKey: string): Promise<void> {
+  if (!(await companyHasModule(companyId, moduleKey))) {
+    throw new AppError(403, "PLAN_FEATURE_UNAVAILABLE", MODULE_NOTICES[moduleKey] ?? "Cette fonctionnalité n'est pas incluse dans votre formule.");
+  }
 }

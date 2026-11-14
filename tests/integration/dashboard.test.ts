@@ -220,8 +220,8 @@ describe("tableau de bord — calculs", () => {
     expect(byId["vat-deadline"].title).toContain("octobre 2026");
     expect(byId["fiscal-year-closing"].title).toContain("48 jours");
     expect(byId["transactions-to-review"].title).toBe("1 opération bancaire à catégoriser");
-    // 7 décaissements sur les comptes de l'entreprise, dont 1 justifié
-    expect(byId["transactions-unjustified"].title).toBe("6 dépenses sans justificatif");
+    // 7 décaissements : 1 justifié, 2 hors charges (TVA reversée, virement interne) qui n'appellent pas de justificatif
+    expect(byId["transactions-unjustified"].title).toBe("4 dépenses sans justificatif");
     expect(byId["invoices-due-soon"]).toBeUndefined();
   });
 

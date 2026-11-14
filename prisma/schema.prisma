@@ -1027,6 +1027,8 @@ model BankTransaction {
   /// Empreinte (date + montant + libellé normalisé) pour la détection des doublons.
   fingerprint        String                @db.Char(64)
   isDuplicateSuspect Boolean               @default(false)
+  /// Nombre de justificatifs associés (recompté à chaque association, jamais incrémenté à l'aveugle).
+  documentCount      Int                   @default(0)
   notes              String?               @db.Text
   reconciledAt       DateTime?
   createdAt          DateTime              @default(now())

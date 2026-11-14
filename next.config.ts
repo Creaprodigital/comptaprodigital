@@ -35,6 +35,10 @@ const nextConfig: NextConfig = {
   // Sortie autonome pour l'image Docker (activée par le Dockerfile).
   output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   serverExternalPackages: ["@node-rs/argon2", "@prisma/client", "pdfkit"],
+  experimental: {
+    // Envoi de justificatifs (10 Mo au plus par fichier, contrôlé par l'API) : marge pour l'enveloppe multipart.
+    proxyClientMaxBodySize: "12mb",
+  },
   turbopack: {
     rules: {
       "*.css": {

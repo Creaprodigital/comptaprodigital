@@ -4,6 +4,7 @@ import { purgeStaleSessions } from "../src/server/auth/session-store";
 import { purgeExpiredRateLimits } from "../src/server/security/rate-limit";
 import { runRecurringInvoices } from "../src/server/modules/invoicing/recurring";
 import { runAutomaticReminders } from "../src/server/modules/invoicing/sending";
+import { purgeDeletedDocuments } from "../src/server/modules/documents/service";
 
 /**
  * Tâches quotidiennes : factures récurrentes, relances automatiques, purges.
@@ -18,7 +19,8 @@ async function main() {
   console.log(`Relances : ${reminders.sent} envoyée(s), ${reminders.skipped} en attente, ${reminders.errors} erreur(s)`);
   const sessions = await purgeStaleSessions();
   const counters = await purgeExpiredRateLimits();
-  console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit`);
+  const documents = await purgeDeletedDocuments();
+  console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit, ${documents} document(s) supprimé(s) depuis plus de 30 jours`);
   console.log(`Terminé en ${Date.now() - startedAt} ms`);
   if (recurring.errors + reminders.errors > 0) process.exitCode = 1;
 }

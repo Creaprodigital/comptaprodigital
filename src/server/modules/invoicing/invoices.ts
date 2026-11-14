@@ -442,6 +442,9 @@ export async function issueInvoice(access: CompanyAccess, userId: string | null,
       { timeout: 20_000, maxWait: 10_000 },
     ),
   );
+  // Import différé : le module d'archivage dépend du modèle d'impression, qui dépend de celui-ci.
+  const { archiveIssuedInvoice } = await import("./archive");
+  await archiveIssuedInvoice(access, issued);
   return issued;
 }
 
