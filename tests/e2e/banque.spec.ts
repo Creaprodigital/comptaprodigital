@@ -54,6 +54,8 @@ test("banque : compte, règle, import d'un relevé, justificatif, rapprochement 
 
   await test.step("import du relevé : aperçu, import, puis doublons ignorés", async () => {
     await page.goto("/app/banque/import");
+    // Le choix d'un fichier n'est pris en compte qu'une fois la page interactive.
+    await page.waitForLoadState("networkidle");
     await page.getByLabel("Relevé bancaire").setInputFiles({ name: "releve.pdf", mimeType: "application/pdf", buffer: PDF });
     await expect(page.getByText("Un relevé au format PDF ne peut pas être importé")).toBeVisible();
 
@@ -113,14 +115,15 @@ test("banque : compte, règle, import d'un relevé, justificatif, rapprochement 
     await expect(page.getByText("Opération rapprochée.")).toBeVisible();
     await expect(page.getByText(`Rapprochement : 1200,00 € sur la facture ${invoiceNumber}`)).toBeVisible();
 
+    const operationUrl = page.url();
     await page.getByRole("link", { name: `Facture ${invoiceNumber}` }).click();
     await expect(page.getByText("Payée").first()).toBeVisible();
 
-    await page.goBack();
+    await page.goto(operationUrl);
     await page.getByRole("button", { name: "Annuler le rapprochement" }).click();
     await expect(page.getByText("Rapprochement annulé.")).toBeVisible();
     const invoice = await page.request.get(`/api/v1/companies/${companyId}/invoices/${invoiceId}`);
-    expect((await invoice.json()).data).toMatchObject({ status: "ISSUED", amountPaid: "0.00" });
+    expect((await invoice.json()).data.invoice).toMatchObject({ status: "ISSUED", amountPaid: "0.00" });
   });
 
   await test.step("documents : bibliothèque, original de la facture archivé, téléchargement et export", async () => {

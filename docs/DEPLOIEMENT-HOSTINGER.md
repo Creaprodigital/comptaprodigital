@@ -146,6 +146,17 @@ Sauvegarde quotidienne à 2 h 30 (`crontab -e`) :
 30 2 * * * cd /opt/comptapro && set -a && . ./backup.env && set +a && ./scripts/backup-db.sh >> /var/log/comptapro-backup.log 2>&1
 ```
 
+**Documents.** Avec le stockage local (par défaut), les justificatifs sont dans le volume Docker
+`documents_data`, chiffrés. Sauvegardez-le chaque nuit, par exemple à 2 h 45 :
+
+```cron
+45 2 * * * docker run --rm -v comptapro_documents_data:/data:ro -v /var/backups/comptapro:/backup alpine tar czf /backup/documents-$(date +\%F).tar.gz -C /data . >> /var/log/comptapro-backup.log 2>&1
+```
+
+Le nom exact du volume s'obtient avec `docker volume ls`. Ces fichiers ne sont lisibles qu'avec
+`APP_ENCRYPTION_KEY` : conservez cette clé hors du serveur, avec la phrase secrète des sauvegardes. Pour un
+stockage objet, renseignez `STORAGE_DRIVER="s3"` et les variables `S3_*` dans `.env`.
+
 Copiez ensuite chaque sauvegarde vers un stockage externe (stockage objet, autre serveur) : une sauvegarde restée
 sur le VPS ne protège pas d'une perte du VPS. La procédure de restauration, à tester régulièrement, est décrite dans
 [SECURITE.md](SECURITE.md#sauvegardes-et-restauration).

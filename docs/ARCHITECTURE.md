@@ -173,13 +173,62 @@ schéma porte déjà les données requises (SIREN du client, nature de l'opérat
 dépôt). **Le PDF produit aujourd'hui n'est pas une facture électronique au sens de la réforme** : celle-ci exige un
 format structuré transmis par une plateforme agréée, à intégrer dans une phase ultérieure.
 
-Le PDF d'une facture émise est régénéré à la demande à partir des données figées ; son archivage sous forme de
-fichier scellé est prévu avec le stockage documentaire (phase 4).
+Le PDF d'une facture émise est régénéré à la demande à partir des données figées (il indique alors les règlements
+reçus). L'original, tel qu'émis, est archivé au moment de l'émission dans les documents de l'entreprise
+(`invoices.pdfDocumentId`) : il ne peut être ni modifié ni supprimé.
 
 ### Tâches quotidiennes
 
 `npm run jobs:daily` (ou `docker compose run --rm jobs`) exécute les factures récurrentes, les relances
-automatiques et les purges (sessions, compteurs de débit). À planifier une fois par jour.
+automatiques et les purges (sessions, compteurs de débit, fichiers des documents supprimés depuis plus de 30 jours).
+À planifier une fois par jour.
+
+## Banque
+
+`src/server/modules/bank/*`. Aucune donnée d'accès bancaire n'est demandée ni conservée.
+
+- **Comptes** (`accounts.ts`) — IBAN chiffré (AES-256-GCM), seuls ses quatre derniers caractères sont affichés.
+  Solde = solde d'ouverture + opérations à partir de la date de ce solde.
+- **Import de relevés** (`parsers/*`, `imports.ts`) — le format est reconnu au contenu : CSV (séparateur, en-tête
+  et colonnes détectés, correspondance confirmée par l'utilisateur), OFX 1.x/2.x, camt.053. Les montants sont lus
+  en chaînes décimales, jamais en flottants. L'import se fait en deux temps (aperçu sans écriture, puis import) ;
+  le fichier est ré-analysé à l'import et n'est pas conservé.
+- **Doublons** (`labels.ts`) — une opération est ignorée si sa référence bancaire (OFX, camt) ou son empreinte
+  (date, montant, libellé normalisé, rang d'apparition) existe déjà sur le compte : réimporter un relevé, ou un
+  relevé qui recouvre la même période, n'ajoute rien. Une opération de même date et de même montant sous un autre
+  libellé est importée et signalée « doublon possible » : l'utilisateur la confirme ou la supprime.
+- **Catégories et règles** (`categories.ts`) — catégories communes (plateforme) et propres à l'entreprise ; règles
+  « contient / commence par / est exactement », par sens et tranche de montant, évaluées par priorité. Les
+  expressions régulières ne sont volontairement pas proposées (risque de déni de service). Une règle ne modifie
+  jamais une opération déjà catégorisée ; chaque application est inscrite dans l'historique de l'opération.
+- **Statuts** (`status.ts`) — à traiter ; catégorisée ; rapprochée (encaissement entièrement affecté à des factures,
+  ou opération catégorisée et appuyée par un justificatif). « Sans justificatif » : décaissement sans pièce, non
+  catégorisé ou classé en charges ou en frais de personnel.
+- **Rapprochement** (`reconciliation.ts`) — un encaissement est affecté à une ou plusieurs factures (suggestions
+  par numéro de facture, montant, nom du client). Chaque affectation crée un règlement lié à l'opération, ou
+  reprend un règlement déjà saisi à la main pour ne pas le compter deux fois. L'annulation retire les règlements
+  créés par le rapprochement. Le rapprochement des décaissements avec des factures fournisseurs viendra avec le
+  module d'achats.
+- **Historique** — toute modification d'une opération est tracée dans le journal d'audit (`BankTransaction`). La
+  date et le montant d'une opération importée ne sont pas modifiables.
+- **Prestataire bancaire** (`provider.ts`) — interface `BankDataProvider` pour un agrégateur agréé (parcours de
+  consentement hébergé par le prestataire, référence opaque de connexion). Aucune implémentation n'est raccordée.
+
+## Documents
+
+`src/server/modules/documents/service.ts`, `src/server/storage/`.
+
+- Types acceptés : PDF, JPEG, PNG, vérifiés par la signature du contenu ; 10 Mo par fichier.
+- Stockage : pilote `local` (dossier du serveur) ou `s3` (tout stockage compatible), choisi par `STORAGE_DRIVER`.
+  Le contenu est chiffré par l'application avant écriture (AES-256-GCM, clé dérivée de `APP_ENCRYPTION_KEY`, clé
+  de l'objet authentifiée) : le stockage ne voit jamais les pièces en clair.
+- Les fichiers ne sont jamais exposés directement : ils sont servis par l'API après contrôle des droits et de la
+  formule, avec le type réel du contenu, `nosniff` et une politique de sécurité dédiée.
+- Un même fichier (même empreinte SHA-256) n'est stocké qu'une fois par entreprise.
+- Suppression : le document disparaît immédiatement de l'espace de l'entreprise ; son fichier est effacé du
+  stockage par la tâche quotidienne après 30 jours.
+- OCR : les colonnes sont prévues (`ocrStatus`, `ocrData`, `ocrVerifiedAt`, `suggestedCategory`) mais aucune
+  extraction n'est faite à ce stade.
 
 ## Rendu et cache (Next.js 16)
 
@@ -215,6 +264,8 @@ Implémentées dans `src/server/modules/dashboard/service.ts` et vérifiées au 
   exigibilité de la TVA retenue par défaut (acomptes : à l'encaissement ; biens : à la facturation ; services : selon
   l'option de l'entreprise), traitement des acomptes sur la facture finale, répartition de la remise globale,
   textes des relances ;
+- banque : comptes comptables suggérés par catégorie, calcul de la TVA comprise dans une opération à partir d'un
+  taux unique, liste des catégories dispensées de justificatif, durée de conservation des pièces ;
 - en phase 5 : plan comptable, FEC et clôture.
 
 ## Feuille de route
@@ -222,8 +273,6 @@ Implémentées dans `src/server/modules/dashboard/service.ts` et vérifiées au 
 Chaque phase suit le même déroulé : architecture, fichiers, implémentation réelle, migrations, tests, corrections,
 documentation des variables d'environnement, commit.
 
-- **Phase 4** — comptes bancaires, imports CSV/OFX/CAMT, catégorisation et règles, rapprochement des règlements,
-  justificatifs et archivage des PDF émis (S3).
 - **Phase 5** — plan comptable, journaux, écritures, grand livre, balance, immobilisations, clôture, TVA, FEC.
 - **Phase 6** — abonnements Stripe (webhooks vérifiés, idempotence) et super administration.
 - **Phase 7** — automatisations, assistant IA (suggestions soumises à validation), intégrations.

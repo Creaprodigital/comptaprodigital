@@ -15,7 +15,7 @@ comptabilité, TVA, documents, abonnements et administration.
 | 1 | Architecture, base MySQL, authentification, entreprises, rôles | ✅ Livrée |
 | 2 | Site vitrine, inscription, tableau de bord | ✅ Livrée |
 | 3 | Clients, produits, devis, factures | ✅ Livrée |
-| 4 | Banque, transactions, justificatifs | ⏳ À venir (schéma en place) |
+| 4 | Banque, transactions, justificatifs | ✅ Livrée |
 | 5 | Moteur comptable, journaux, TVA, exports | ⏳ À venir (schéma en place) |
 | 6 | Stripe et super administration | ⏳ À venir (schéma en place) |
 | 7 | Automatisations, IA, intégrations | ⏳ À venir |
@@ -30,6 +30,14 @@ Ce qui fonctionne réellement aujourd'hui :
 - **Facturation** — clients, catalogue, taux de TVA, devis (cycle de vie, envoi), factures (brouillon, émission
   numérotée et verrouillée), factures d'acompte, avoirs, factures récurrentes, règlements, PDF avec mentions
   obligatoires, envoi par e-mail, relances manuelles et automatiques, logo et personnalisation, exports CSV.
+- **Banque** (formules Pro et Business) — comptes bancaires, import de relevés CSV, OFX et camt.053 avec aperçu,
+  détection des doublons, saisie manuelle, recherche et filtres, catégorisation (unitaire ou par sélection),
+  règles automatiques, rapprochement des encaissements avec les factures (annulable), suivi des dépenses sans
+  justificatif, historique des modifications, export CSV. La synchronisation automatique par un prestataire agréé
+  n'est **pas** disponible : seule son interface d'intégration est préparée.
+- **Documents** (formules Pro et Business) — ajout de PDF, JPEG et PNG, chiffrés avant stockage (disque local ou
+  S3), classement, recherche, association aux opérations, factures et devis, aperçu, téléchargement, historique,
+  export ZIP, archivage de l'original de chaque facture émise. La lecture automatique (OCR) n'est pas livrée.
 
 ## Pile technique
 

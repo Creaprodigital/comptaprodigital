@@ -27,7 +27,10 @@
 | Fichiers | Logo accepté uniquement en PNG/JPEG vérifié par signature binaire, 500 Ko maximum, servi avec `nosniff` | intégration |
 | Exports CSV | Cellules commençant par `=`, `+`, `-`, `@` neutralisées (injection de formules) | intégration |
 | Données bancaires de l'entreprise | IBAN chiffré au repos, jamais renvoyé en entier au navigateur | intégration |
-| Banque | Aucun identifiant bancaire demandé ni stocké | conception |
+| Banque | Aucun identifiant bancaire demandé ni stocké ; date et montant d'une opération importée non modifiables ; toute modification tracée | conception, `tests/integration/bank.test.ts` |
+| Relevés importés | Taille bornée, analyse sans résolution d'entités XML externes, règles sans expressions régulières | `tests/unit/bank-parsers.test.ts` |
+| Documents | Type vérifié par signature (PDF, JPEG, PNG), 10 Mo maximum, chiffrement applicatif AES-256-GCM avant stockage, accès uniquement par l'API après contrôle des droits, téléchargements journalisés | intégration, e2e |
+| Aperçu des documents | Servi avec `nosniff` et une CSP `default-src 'none'`, affichable uniquement dans un cadre de la même origine | e2e |
 | Super administrateur | Aucun accès implicite aux données des entreprises | intégration |
 
 ## Limites connues et travaux restants (phase 8)
@@ -40,13 +43,16 @@
 - **Chiffrement au repos de la base** : à assurer au niveau du volume du VPS ou de MySQL (non configuré ici).
 - **Purge planifiée** : assurée par la tâche quotidienne (`jobs`), à condition de la planifier (voir le guide de
   déploiement). Les jetons de vérification expirés ne sont pas encore purgés.
-- **Archivage des factures émises** : le PDF est régénéré à la demande ; l'archivage d'un fichier scellé viendra
-  avec le stockage documentaire.
+- **Clé de chiffrement** : `APP_ENCRYPTION_KEY` protège les secrets en base et les documents. Sa rotation n'est
+  pas outillée ; sa perte rend les documents illisibles. À conserver hors du serveur.
+- **Documents sur disque local** : le dossier de stockage doit être sauvegardé en plus de la base (voir le guide
+  de déploiement). Avec S3, activez le versionnage et la réplication chez le fournisseur.
 - **Suppression de compte en libre-service** : non livrée (l'export des données l'est). Les demandes d'effacement
   sont à traiter manuellement en attendant, en respectant les durées de conservation légales.
 - **Audit externe** : test d'intrusion et revue de code indépendants recommandés avant ouverture au public.
-- **Antivirus des pièces jointes, journalisation centralisée, alertes** : à traiter avec le module documentaire et
-  la supervision.
+- **Antivirus des pièces jointes** : non intégré. Les fichiers ne sont jamais exécutés ni interprétés par le
+  serveur, mais un document téléchargé par un utilisateur peut contenir un contenu malveillant pour son poste.
+- **Journalisation centralisée, alertes** : à traiter avec la supervision.
 
 ## RGPD
 

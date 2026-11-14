@@ -19,6 +19,9 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      STORAGE_LOCAL_DIR: /data/storage
+    volumes:
+      - documents_data:/data/storage
     depends_on:
       db:
         condition: service_healthy
@@ -53,6 +56,9 @@ services:
     environment:
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
       NODE_ENV: production
+      STORAGE_LOCAL_DIR: /data/storage
+    volumes:
+      - documents_data:/data/storage
     depends_on:
       db:
         condition: service_healthy
@@ -100,6 +106,8 @@ services:
 
 volumes:
   db_data:
+  # Documents chiffrés (pilote de stockage « local ») — à sauvegarder avec la base.
+  documents_data:
   caddy_data:
   caddy_config:
 
