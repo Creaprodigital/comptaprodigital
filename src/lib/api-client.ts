@@ -28,6 +28,27 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+type Payload<T> = { data?: T; error?: { code: string; message: string; details?: unknown } } | null;
+
+function unwrap<T>(response: Response, payload: Payload<T>): T {
+  if (!response.ok || !payload) {
+    const error = payload?.error;
+    throw new ApiError(response.status, error?.code ?? "UNKNOWN_ERROR", error?.message ?? "Une erreur inattendue est survenue. Veuillez réessayer.", error?.details);
+  }
+  return payload.data as T;
+}
+
+/** Envoi de fichiers (multipart/form-data) : le navigateur fixe lui-même l'en-tête et sa frontière. */
+export async function apiUpload<T = unknown>(path: string, form: FormData): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1${path}`, { method: "POST", credentials: "same-origin", body: form });
+  } catch {
+    throw new ApiError(0, "NETWORK_ERROR", "Connexion au serveur impossible. Vérifiez votre réseau et réessayez.");
+  }
+  return unwrap<T>(response, (await response.json().catch(() => null)) as Payload<T>);
+}
+
 export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal } = options;
   let response: Response;

@@ -256,7 +256,8 @@ export async function seedDemoData(prisma: PrismaClient, password: string): Prom
           amount: totalInclTax.negated().toFixed(2),
           categoryId: categoryId(template.category),
           purchaseId: purchase.id,
-          status: "RECONCILED",
+          // Catégorisée, mais sans justificatif associé : elle reste à justifier.
+          status: "CATEGORIZED",
         });
       }
     }
@@ -314,6 +315,7 @@ export async function seedDemoData(prisma: PrismaClient, password: string): Prom
           paidAt: fromIsoDate(tx.date),
           method: "TRANSFER",
           bankTransactionId: created.id,
+          createdFromBank: true,
           createdById: user.id,
         },
       });

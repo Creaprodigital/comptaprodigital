@@ -28,6 +28,17 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];
 
+/**
+ * Contenu d'un document (PDF, image) servi par l'API : il peut être affiché dans un
+ * cadre de l'application elle-même, et ne peut ni exécuter de script ni charger de ressource.
+ */
+const documentContentPath = "api/v1/companies/[^/]+/documents/[^/]+/content";
+const documentHeaders = [
+  { key: "Content-Security-Policy", value: "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  ...securityHeaders.filter((header) => !["Content-Security-Policy", "X-Frame-Options"].includes(header.key)),
+];
+
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
@@ -49,7 +60,9 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
+      // Tout le site, sauf le contenu des documents (aperçu dans un cadre de la même origine, ci-dessous).
+      { source: `/((?!${documentContentPath}).*)`, headers: securityHeaders },
+      { source: "/api/v1/companies/:companyId/documents/:documentId/content", headers: documentHeaders },
       // Les pages de l'espace client et l'API ne doivent jamais être mises en cache par un intermédiaire.
       { source: "/app/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },

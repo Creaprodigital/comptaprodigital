@@ -9,6 +9,8 @@ import {
   ChevronsUpDownIcon,
   ContactRoundIcon,
   FileSignatureIcon,
+  FolderOpenIcon,
+  LandmarkIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   MenuIcon,
@@ -58,6 +60,13 @@ const NAV: NavGroup[] = [
       { label: "Devis", href: "/app/devis", icon: FileSignatureIcon, requiresCompany: true },
       { label: "Clients", href: "/app/clients", icon: ContactRoundIcon, requiresCompany: true },
       { label: "Catalogue", href: "/app/catalogue", icon: PackageIcon, requiresCompany: true },
+    ],
+  },
+  {
+    title: "Trésorerie",
+    items: [
+      { label: "Banque", href: "/app/banque", icon: LandmarkIcon, requiresCompany: true },
+      { label: "Documents", href: "/app/documents", icon: FolderOpenIcon, requiresCompany: true },
     ],
   },
   {

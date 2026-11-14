@@ -9,8 +9,8 @@ const querySchema = z.object({ download: z.enum(["1"]).optional() });
 
 /**
  * Contenu d'un document, après contrôle des droits. Le type servi est celui du
- * contenu (jamais un type exécutable) et le document est isolé par une politique
- * de sécurité stricte : il ne peut ni exécuter de script ni charger de ressource.
+ * contenu (PDF, JPEG ou PNG, jamais un type exécutable). Les en-têtes de sécurité
+ * propres à cette route (affichage dans un cadre de l'application) sont dans next.config.ts.
  */
 export const GET = authRoute<{ companyId: string; documentId: string }, undefined, typeof querySchema>({ query: querySchema }, async ({ auth, params, query, meta }) => {
   const access = await authorizeDocuments(auth.user.id, params.companyId, "documents:read");
@@ -25,8 +25,6 @@ export const GET = authRoute<{ companyId: string; documentId: string }, undefine
       "Content-Disposition": contentDisposition(download || !type ? "attachment" : "inline", fileName),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; object-src 'self'; frame-ancestors 'self'; sandbox",
-      "X-Frame-Options": "SAMEORIGIN",
     },
   });
 });

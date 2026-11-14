@@ -40,6 +40,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       DATABASE_URL: databaseUrl,
+      STORAGE_DRIVER: "local",
+      STORAGE_LOCAL_DIR: ".storage-e2e",
       APP_URL: baseURL,
       NEXT_PUBLIC_SITE_URL: baseURL,
       APP_ENCRYPTION_KEY: process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 9).toString("base64"),
