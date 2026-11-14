@@ -24,7 +24,7 @@ test("facturation : client, article, facture émise, envoi, règlement, avoir et
     await page.getByLabel("Adresse e-mail").fill(customerEmail);
     await page.getByLabel("SIREN").fill("732 829 320");
     await page.getByRole("button", { name: "Créer le client" }).click();
-    await expect(page.getByRole("cell", { name: /Librairie des Arcades/ })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /Librairie des Arcades/ }).first()).toBeVisible();
   });
 
   await test.step("création d'un article du catalogue", async () => {
@@ -34,7 +34,7 @@ test("facturation : client, article, facture émise, envoi, règlement, avoir et
     await page.getByLabel("Prix unitaire HT").fill("650");
     await page.getByLabel("Unité").fill("jour");
     await page.getByRole("button", { name: "Créer l'article" }).click();
-    await expect(page.getByRole("cell", { name: /Journée de conseil/ })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /Journée de conseil/ }).first()).toBeVisible();
   });
 
   await test.step("brouillon de facture avec totaux calculés en direct", async () => {
@@ -97,7 +97,7 @@ test("facturation : client, article, facture émise, envoi, règlement, avoir et
     await page.getByRole("dialog").getByRole("button", { name: "Envoyer" }).click();
     await expect(page.getByText("Facture envoyée par e-mail.")).toBeVisible();
     const mail = await waitForMail(customerEmail, `Facture F-${year}-0001`);
-    expect(mail.text).toContain("1 692,55");
+    expect(mail.text).toMatch(/1\s692,55/); // espace fine insécable
     expect(mail.attachments).toEqual([expect.objectContaining({ filename: `facture-f-${year}-0001.pdf`, contentType: "application/pdf", isPdf: true })]);
     await expect(page.getByText("Envoyée", { exact: true })).toBeVisible();
   });

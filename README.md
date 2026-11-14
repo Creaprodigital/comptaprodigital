@@ -14,17 +14,22 @@ comptabilité, TVA, documents, abonnements et administration.
 |---|---|---|
 | 1 | Architecture, base MySQL, authentification, entreprises, rôles | ✅ Livrée |
 | 2 | Site vitrine, inscription, tableau de bord | ✅ Livrée |
-| 3 | Clients, produits, devis, factures | ⏳ À venir (schéma en place) |
+| 3 | Clients, produits, devis, factures | ✅ Livrée |
 | 4 | Banque, transactions, justificatifs | ⏳ À venir (schéma en place) |
 | 5 | Moteur comptable, journaux, TVA, exports | ⏳ À venir (schéma en place) |
 | 6 | Stripe et super administration | ⏳ À venir (schéma en place) |
 | 7 | Automatisations, IA, intégrations | ⏳ À venir |
 | 8 | Durcissement sécurité, optimisation, déploiement | 🔶 Socle en place (Docker, CI, sauvegardes) |
 
-Ce qui fonctionne réellement aujourd'hui : le site vitrine complet (16 pages), l'inscription avec vérification
-d'e-mail, la connexion, la double authentification (TOTP + codes de secours), la réinitialisation de mot de passe,
-la gestion multi-entreprises avec recherche Sirene, les invitations et rôles, le tableau de bord calculé à partir
-de la base, la gestion du compte (sessions, export RGPD) et le formulaire de contact.
+Ce qui fonctionne réellement aujourd'hui :
+
+- **Socle** — site vitrine complet (16 pages), inscription avec vérification d'e-mail, connexion, double
+  authentification (TOTP + codes de secours), réinitialisation de mot de passe, gestion multi-entreprises avec
+  recherche Sirene, invitations et rôles, compte (sessions, export RGPD), formulaire de contact.
+- **Tableau de bord** — indicateurs calculés à partir de la base, filtres de période, alertes.
+- **Facturation** — clients, catalogue, taux de TVA, devis (cycle de vie, envoi), factures (brouillon, émission
+  numérotée et verrouillée), factures d'acompte, avoirs, factures récurrentes, règlements, PDF avec mentions
+  obligatoires, envoi par e-mail, relances manuelles et automatiques, logo et personnalisation, exports CSV.
 
 ## Pile technique
 
@@ -79,6 +84,7 @@ Compte de démonstration : `demo@comptaprodigital.fr` / `Demo-ComptaPro-2026!` (
 | `npm run db:seed` | Données de référence : rôles, permissions, formules, TVA, catégories |
 | `npm run db:seed:demo` | Idem + compte et entreprise de démonstration |
 | `npm run db:studio` | Explorateur de base Prisma Studio |
+| `npm run jobs:daily` | Tâches quotidiennes : factures récurrentes, relances automatiques, purges |
 
 ## Documentation
 

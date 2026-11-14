@@ -5,6 +5,7 @@ import { Building2Icon, CheckIcon, PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { LEGAL_FORM_LABELS } from "@/config/legal";
 import type { CompanySummary } from "@/server/modules/companies/service";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatSiren } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ export function CompaniesView({
   openCreate: boolean;
 }) {
   const [dialogOpen, setDialogOpen] = useState(openCreate && companies.length > 0);
+  useResetOnHide(() => setDialogOpen(false));
   const limitReached = plan !== null && plan.maxCompanies !== null && plan.owned >= plan.maxCompanies;
 
   async function activate(companyId: string) {

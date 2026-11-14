@@ -1,6 +1,6 @@
 # Sécurité, RGPD, sauvegardes
 
-État des mesures à l'issue des phases 1 et 2. Ce document distingue ce qui est **en place et testé** de ce qui
+État des mesures à l'issue des phases 1 à 3. Ce document distingue ce qui est **en place et testé** de ce qui
 **reste à faire** : il ne constitue pas une attestation de conformité.
 
 ## Mesures en place
@@ -22,6 +22,11 @@
 | Chiffrement | TLS par Caddy ; secrets MFA et IBAN chiffrés au repos ; jetons stockés hachés | unitaires |
 | Audit | Journal en ajout seul des actions sensibles (connexions, MFA, membres, entreprise), sans secret | intégration |
 | Secrets | Variables d'environnement validées au démarrage, jamais envoyées au navigateur, `.env` ignoré par Git | revue |
+| Formulaires | Méthode POST explicite : un envoi avant le chargement du JavaScript ne place jamais un mot de passe dans l'URL | revue |
+| Factures | Émission atomique et verrouillage : aucune modification silencieuse d'une facture émise (409) ; historique dans le journal d'audit | `tests/integration/invoicing.test.ts`, e2e |
+| Fichiers | Logo accepté uniquement en PNG/JPEG vérifié par signature binaire, 500 Ko maximum, servi avec `nosniff` | intégration |
+| Exports CSV | Cellules commençant par `=`, `+`, `-`, `@` neutralisées (injection de formules) | intégration |
+| Données bancaires de l'entreprise | IBAN chiffré au repos, jamais renvoyé en entier au navigateur | intégration |
 | Banque | Aucun identifiant bancaire demandé ni stocké | conception |
 | Super administrateur | Aucun accès implicite aux données des entreprises | intégration |
 
@@ -33,8 +38,10 @@
 - **TOTP** : un code reste réutilisable pendant sa fenêtre de validité (30 s, ± 1 pas) ; la limitation de débit en
   réduit l'intérêt, un anti-rejeu strict reste à ajouter.
 - **Chiffrement au repos de la base** : à assurer au niveau du volume du VPS ou de MySQL (non configuré ici).
-- **Purge planifiée** des sessions, jetons et compteurs expirés : les fonctions existent, la planification reste à
-  mettre en place.
+- **Purge planifiée** : assurée par la tâche quotidienne (`jobs`), à condition de la planifier (voir le guide de
+  déploiement). Les jetons de vérification expirés ne sont pas encore purgés.
+- **Archivage des factures émises** : le PDF est régénéré à la demande ; l'archivage d'un fichier scellé viendra
+  avec le stockage documentaire.
 - **Suppression de compte en libre-service** : non livrée (l'export des données l'est). Les demandes d'effacement
   sont à traiter manuellement en attendant, en respectant les durées de conservation légales.
 - **Audit externe** : test d'intrusion et revue de code indépendants recommandés avant ouverture au public.

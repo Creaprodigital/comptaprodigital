@@ -83,7 +83,16 @@ const LABELS: Record<Kind, { second: string; terms: string; submitNew: string; s
   recurring: { second: "Dernière échéance (facultatif)", terms: "", submitNew: "Créer la facture récurrente", submitEdit: "", back: "/app/factures/recurrentes", endpoint: "recurring-invoices" },
 };
 
-export function DocumentEditor({ kind, companyId, currency, franchise, customers: initialCustomers, products, vatRates, defaults, initial, canCreateCustomer }: Props) {
+/**
+ * Next.js conserve l'état des pages quittées. La clé `bfcacheId` repart d'un formulaire neuf à chaque
+ * navigation (lien, redirection) tout en restaurant une saisie en cours lors d'un retour arrière.
+ */
+export function DocumentEditor(props: Props) {
+  const { bfcacheId } = useRouter();
+  return <EditorForm key={bfcacheId} {...props} />;
+}
+
+function EditorForm({ kind, companyId, currency, franchise, customers: initialCustomers, products, vatRates, defaults, initial, canCreateCustomer }: Props) {
   const router = useRouter();
   const labels = LABELS[kind];
   const editing = Boolean(initial.id);
@@ -191,6 +200,7 @@ export function DocumentEditor({ kind, companyId, currency, franchise, customers
       const path = `/companies/${companyId}/${labels.endpoint}`;
       const saved = editing ? await api<{ id: string }>(`${path}/${initial.id}`, { method: "PATCH", body }) : await api<{ id: string }>(path, { method: "POST", body });
       toast.success(kind === "quote" ? "Devis enregistré." : kind === "invoice" ? "Brouillon enregistré." : "Facture récurrente créée.");
+      setPending(false);
       router.push(kind === "recurring" ? labels.back : `${labels.back}/${saved.id}`);
       router.refresh();
     } catch (error) {

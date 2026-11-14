@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArchiveIcon, ArchiveRestoreIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { CustomerView } from "@/server/modules/customers/service";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatCurrency, formatSiren } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ export function CustomersTable({ companyId, customers, canWrite, currency }: { c
   const router = useRouter();
   const [editing, setEditing] = useState<CustomerView | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  useResetOnHide(() => setEditing(null));
 
   async function archive(customer: CustomerView, archived: boolean) {
     setBusy(customer.id);
@@ -97,6 +99,7 @@ export function CustomersTable({ companyId, customers, canWrite, currency }: { c
 export function NewCustomerButton({ companyId }: { companyId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  useResetOnHide(() => setOpen(false));
   return (
     <>
       <Button onClick={() => setOpen(true)}>

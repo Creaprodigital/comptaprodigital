@@ -150,7 +150,19 @@ Copiez ensuite chaque sauvegarde vers un stockage externe (stockage objet, autre
 sur le VPS ne protège pas d'une perte du VPS. La procédure de restauration, à tester régulièrement, est décrite dans
 [SECURITE.md](SECURITE.md#sauvegardes-et-restauration).
 
-## 6. Mises à jour
+## 6. Tâches quotidiennes
+
+Les factures récurrentes et les relances automatiques sont produites par une tâche à lancer une fois par jour
+(`crontab -e`, ici à 6 h 15) :
+
+```cron
+15 6 * * * cd /opt/comptapro && docker compose run --rm jobs >> /var/log/comptapro-jobs.log 2>&1
+```
+
+Sans cette planification, les récurrences ne génèrent aucune facture et aucune relance automatique ne part ; les
+relances manuelles restent disponibles depuis chaque facture.
+
+## 7. Mises à jour
 
 Manuellement :
 
@@ -169,7 +181,7 @@ Automatiquement avec GitHub Actions (`.github/workflows/deploy.yml`) :
 Le workflow construit les images, sauvegarde la base, applique les migrations, redémarre l'application et vérifie
 `/api/v1/health`.
 
-## 7. Exploitation
+## 8. Exploitation
 
 | Besoin | Commande |
 |---|---|
@@ -177,7 +189,7 @@ Le workflow construit les images, sauvegarde la base, applique les migrations, r
 | État des services | `docker compose ps` |
 | Redémarrer l'application | `docker compose restart app` |
 | Console MySQL | `docker compose exec db mysql -u comptapro -p comptapro` |
-| Purge des sessions et compteurs expirés | à planifier en phase 8 (fonctions `purgeStaleSessions`, `purgeExpiredRateLimits`) |
+| Tâches quotidiennes à la demande | `docker compose run --rm jobs` |
 
 Points d'attention :
 

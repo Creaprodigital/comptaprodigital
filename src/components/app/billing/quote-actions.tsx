@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CheckIcon, FileDownIcon, Loader2Icon, PencilIcon, ReceiptTextIcon, SendIcon, Trash2Icon, UndoIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { QuoteView } from "@/server/modules/invoicing/quotes";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export function QuoteActions({
   const [formError, setFormError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<"invoice" | "deposit">("invoice");
+  useResetOnHide(() => setDialog(null));
 
   const base = `/companies/${companyId}/quotes/${quote.id}`;
   const status = quote.status;
@@ -71,6 +73,7 @@ export function QuoteActions({
     void run(async () => {
       const invoice = await api<{ id: string }>(`${base}/convert`, { method: "POST", body: mode === "deposit" ? { mode, percent } : { mode } });
       toast.success(mode === "deposit" ? "Facture d'acompte préparée en brouillon." : "Facture préparée en brouillon.");
+      setDialog(null);
       router.push(`/app/factures/${invoice.id}`);
       router.refresh();
     });

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CopyIcon, DownloadIcon, KeyRoundIcon, Loader2Icon, MonitorSmartphoneIcon, ShieldCheckIcon, ShieldOffIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -165,6 +166,12 @@ function MfaCard({ enabled }: { enabled: boolean }) {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [disableOpen, setDisableOpen] = useState(false);
   const { pending, errors, formError, submit } = useSubmit();
+  // Le secret TOTP et les codes de secours ne doivent pas rester en mémoire d'une page masquée.
+  useResetOnHide(() => {
+    setSetup(null);
+    setRecoveryCodes(null);
+    setDisableOpen(false);
+  });
 
   function start() {
     void submit(async () => setSetup(await api<MfaSetup>("/me/mfa/setup", { method: "POST" })));

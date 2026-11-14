@@ -36,7 +36,7 @@ Navigateur ──HTTPS──► Caddy (reverse proxy, TLS) ──► Next.js (No
 
 ```
 ├── prisma/
-│   ├── schema.prisma            Schéma relationnel complet (51 tables)
+│   ├── schema.prisma            Schéma relationnel complet (52 tables)
 │   ├── migrations/              Migrations SQL versionnées
 │   ├── reference-data.ts        Rôles, permissions, formules, TVA, catégories (idempotent)
 │   ├── demo-data.ts             Entreprise de démonstration (optionnelle)
@@ -62,14 +62,15 @@ Navigateur ──HTTPS──► Caddy (reverse proxy, TLS) ──► Next.js (No
 │   │   ├── http/                Enveloppe des routes API (CSRF, débit, validation, erreurs)
 │   │   ├── security/            Chiffrement, jetons, limitation de débit
 │   │   ├── audit/, mail/        Journal d'audit, e-mails transactionnels
-│   │   └── modules/             companies, dashboard, insee, plans, contact, notifications
+│   │   └── modules/             companies, dashboard, insee, plans, contact, notifications,
+│   │                            customers, products, invoicing (devis, factures, PDF, envoi, récurrence)
 │   └── proxy.ts                 Premier filtre de l'espace client (redirection sans session)
 ├── tests/
 │   ├── unit/                    Fonctions pures
 │   ├── integration/             Services contre MySQL (base _test)
 │   └── e2e/                     Playwright sur build de production (base _e2e, SMTP local)
 ├── docker/, Dockerfile, docker-compose.yml, docker-compose.dev.yml
-├── scripts/                     Sauvegarde et restauration chiffrées
+├── scripts/                     Sauvegarde et restauration chiffrées, tâches quotidiennes (run-jobs.ts)
 └── .github/workflows/           CI et déploiement
 ```
 
@@ -81,7 +82,7 @@ refontes lors des phases suivantes. Tables principales :
 | Domaine | Tables |
 |---|---|
 | Identité et accès | `users`, `sessions`, `verification_tokens`, `mfa_recovery_codes`, `roles`, `permissions`, `role_permissions` |
-| Entreprises | `companies`, `company_users`, `company_invitations`, `fiscal_years` |
+| Entreprises | `companies`, `company_users`, `company_invitations`, `company_logos`, `fiscal_years` |
 | Abonnements | `subscription_plans`, `subscriptions`, `subscription_payments`, `stripe_events` |
 | Facturation | `customers`, `suppliers`, `products`, `vat_rates`, `quotes`, `quote_items`, `invoices`, `invoice_items`, `number_sequences`, `recurring_invoices`, `payments`, `purchases` |
 | Banque | `bank_accounts`, `bank_transactions`, `bank_imports`, `transaction_categories`, `categorization_rules` |
@@ -131,6 +132,55 @@ contrôle d'origine (anti-CSRF), limitation de débit, session, validation Zod, 
 | Membres | `GET /companies/:id/members`, `PATCH/DELETE /companies/:id/members/:memberId`, `POST /companies/:id/invitations`, `DELETE /companies/:id/invitations/:invitationId`, `GET /invitations/:token`, `POST /invitations/:token/accept` |
 | Divers | `GET /company-search?q=`, `GET /plans`, `POST /contact`, `GET /health` |
 
+Facturation (toutes sous `/companies/:id`) :
+
+| Ressource | Routes |
+|---|---|
+| Clients | `GET/POST /customers`, `GET/PATCH /customers/:cid`, `POST /customers/:cid/archive`, `GET /customers/export` |
+| Catalogue | `GET/POST /products`, `PATCH /products/:pid`, `POST /products/:pid/archive`, `GET /products/export`, `GET/POST /vat-rates`, `DELETE /vat-rates/:rid` |
+| Devis | `GET/POST /quotes`, `GET/PATCH/DELETE /quotes/:qid`, `POST /quotes/:qid/{status,send,convert}`, `GET /quotes/:qid/pdf`, `GET /quotes/export` |
+| Factures | `GET/POST /invoices`, `GET/PATCH/DELETE /invoices/:iid`, `POST /invoices/:iid/{issue,send,remind,credit-note}`, `GET /invoices/:iid/pdf`, `POST /invoices/:iid/payments`, `DELETE /invoices/:iid/payments/:pid`, `GET /invoices/export` |
+| Récurrence | `GET/POST /recurring-invoices`, `PATCH/DELETE /recurring-invoices/:rid` |
+| Paramètres | `GET/PATCH /billing-settings`, `GET/PUT/DELETE /logo` |
+
+## Facturation
+
+Le module `src/server/modules/invoicing` regroupe les devis, les factures, le PDF, l'envoi et la récurrence. Le
+calcul des totaux (`src/lib/invoicing.ts`) est un module pur, partagé avec le formulaire pour l'aperçu en direct ;
+**le serveur recalcule toujours** et n'utilise jamais un total reçu du navigateur.
+
+| Règle | Mise en œuvre |
+|---|---|
+| Numérotation chronologique continue | Le numéro est pris à l'émission, dans une transaction qui verrouille le compteur `number_sequences` (une séquence par entreprise, par type et par année). Si l'émission échoue, la transaction rend le numéro : ni trou, ni doublon, y compris en émissions simultanées (testé). |
+| Chronologie | Une facture ne peut pas être émise à une date antérieure à celle du dernier document émis de la même séquence, ni à une date future. |
+| Intangibilité | Un brouillon se modifie et se supprime librement (il n'a pas de numéro). Une facture émise est verrouillée : l'API répond 409 à toute modification ou suppression. |
+| Correction | Par **avoir** uniquement, numéroté dans sa propre séquence et lié à la facture d'origine ; le total des avoirs ne peut pas dépasser celui de la facture. Les avoirs viennent en déduction du reste à encaisser et du chiffre d'affaires. |
+| Parties figées | À l'émission, l'identité de l'émetteur et du client est copiée dans la facture (`partiesSnapshot`) : une modification ultérieure des fiches ne change pas les factures émises. |
+| Totaux | Total HT d'une ligne arrondi au centime ; remise globale répartie entre les taux de TVA au prorata ; TVA calculée par taux sur la base nette. |
+| Acomptes | La facture d'acompte porte une ligne par taux de TVA du devis. La facture finale reprend les lignes du devis et déduit chaque acompte émis par une ligne négative au même taux ; la remise globale ne s'applique qu'aux lignes positives. Acompte + facture finale = montant du devis (testé). |
+| Franchise en base | Aucune ligne ne peut porter de TVA ; la mention « TVA non applicable, art. 293 B du CGI » figure sur les documents. |
+| Règlements | La facture est verrouillée en base pendant l'enregistrement : deux règlements simultanés ne peuvent pas dépasser le reste dû (testé). |
+| Relances | Manuelles depuis la facture, ou automatiques (délais configurables après l'échéance, une relance au plus par jour et par facture). |
+| Récurrence | La tâche quotidienne génère les factures échues, datées du jour de génération pour respecter la chronologie ; brouillon, émission ou émission + envoi selon le réglage. |
+| Formules | Les factures d'acompte et récurrentes relèvent du module `invoicing-advanced` (Pro et Business) ; les avoirs sont disponibles dans toutes les formules, car ils sont le seul moyen légal de corriger une facture. |
+
+### PDF et facturation électronique
+
+Le rendu passe par une représentation structurée indépendante du format (`document-model.ts` :
+émetteur, client, lignes, ventilation de TVA, mentions, conditions de règlement), aujourd'hui convertie en PDF par
+PDFKit (`pdf.ts`). Les formats structurés de la réforme (Factur-X, UBL, CII) se brancheront sur ce même modèle, et le
+schéma porte déjà les données requises (SIREN du client, nature de l'opération, exigibilité de la TVA, statut de
+dépôt). **Le PDF produit aujourd'hui n'est pas une facture électronique au sens de la réforme** : celle-ci exige un
+format structuré transmis par une plateforme agréée, à intégrer dans une phase ultérieure.
+
+Le PDF d'une facture émise est régénéré à la demande à partir des données figées ; son archivage sous forme de
+fichier scellé est prévu avec le stockage documentaire (phase 4).
+
+### Tâches quotidiennes
+
+`npm run jobs:daily` (ou `docker compose run --rm jobs`) exécute les factures récurrentes, les relances
+automatiques et les purges (sessions, compteurs de débit). À planifier une fois par jour.
+
 ## Rendu et cache (Next.js 16)
 
 Le projet utilise **Cache Components** : rien n'est mis en cache sans directive explicite. Le site vitrine est
@@ -161,15 +211,19 @@ Implémentées dans `src/server/modules/dashboard/service.ts` et vérifiées au 
   particulières) et la notion de dépenses ;
 - rappels d'échéances de TVA (`vat-deadlines.ts`) : fenêtres légales indicatives, pas de date opposable ;
 - contenus des pages légales et des articles de blog ;
-- à partir de la phase 3 : mentions de facture, numérotation, et, en phase 5, plan comptable, FEC et clôture.
+- facturation : mentions portées sur les factures et les avoirs, règle de numérotation et de chronologie,
+  exigibilité de la TVA retenue par défaut (acomptes : à l'encaissement ; biens : à la facturation ; services : selon
+  l'option de l'entreprise), traitement des acomptes sur la facture finale, répartition de la remise globale,
+  textes des relances ;
+- en phase 5 : plan comptable, FEC et clôture.
 
 ## Feuille de route
 
 Chaque phase suit le même déroulé : architecture, fichiers, implémentation réelle, migrations, tests, corrections,
 documentation des variables d'environnement, commit.
 
-- **Phase 3** — clients, catalogue, devis, factures (acomptes, avoirs, récurrence), PDF, envoi, règlements, relances.
-- **Phase 4** — comptes bancaires, imports CSV/OFX/CAMT, catégorisation et règles, rapprochement, justificatifs (S3).
+- **Phase 4** — comptes bancaires, imports CSV/OFX/CAMT, catégorisation et règles, rapprochement des règlements,
+  justificatifs et archivage des PDF émis (S3).
 - **Phase 5** — plan comptable, journaux, écritures, grand livre, balance, immobilisations, clôture, TVA, FEC.
 - **Phase 6** — abonnements Stripe (webhooks vérifiés, idempotence) et super administration.
 - **Phase 7** — automatisations, assistant IA (suggestions soumises à validation), intégrations.

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ArchiveIcon, ArchiveRestoreIcon, Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { ProductView, VatRateView } from "@/server/modules/products/service";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +110,7 @@ function ProductDialog({
 
 export function NewProductButton({ companyId, vatRates }: { companyId: string; vatRates: VatRateView[] }) {
   const [open, setOpen] = useState(false);
+  useResetOnHide(() => setOpen(false));
   return (
     <>
       <Button onClick={() => setOpen(true)}>
@@ -123,6 +125,7 @@ export function ProductsTable({ companyId, products, vatRates, canWrite, currenc
   const router = useRouter();
   const [editing, setEditing] = useState<ProductView | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  useResetOnHide(() => setEditing(null));
 
   async function archive(product: ProductView, archived: boolean) {
     setBusy(product.id);

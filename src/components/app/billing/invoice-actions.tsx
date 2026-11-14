@@ -7,6 +7,7 @@ import { BellRingIcon, CircleDollarSignIcon, FileDownIcon, FileMinus2Icon, Loade
 import { toast } from "sonner";
 import type { InvoiceView } from "@/server/modules/invoicing/invoices";
 import type { VatRateView } from "@/server/modules/products/service";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/invoicing";
@@ -40,6 +41,7 @@ export function InvoiceActions({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [creditMode, setCreditMode] = useState<"full" | "partial">("full");
+  useResetOnHide(() => setDialog(null));
 
   const base = `/companies/${companyId}/invoices/${invoice.id}`;
   const draft = invoice.status === "DRAFT";

@@ -6,6 +6,7 @@ import { Loader2Icon, MailIcon, ShieldCheckIcon, Trash2Icon, UserPlusIcon } from
 import { toast } from "sonner";
 import type { InvitationView, MemberView } from "@/server/modules/companies/members";
 import { ASSIGNABLE_ROLE_KEYS, ROLE_DEFINITIONS, type AssignableRoleKey } from "@/server/rbac/permissions";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, ApiError, errorMessage } from "@/lib/api-client";
 import { formatDate, initials } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,10 @@ export function TeamView({ companyId, companyName, currentUserId, canManage, mem
   const [selectedRole, setSelectedRole] = useState<AssignableRoleKey>("COLLABORATOR");
   const [toRemove, setToRemove] = useState<MemberView | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  useResetOnHide(() => {
+    setInviteOpen(false);
+    setToRemove(null);
+  });
 
   async function invite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { PauseIcon, PlayIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import type { RecurringView } from "@/server/modules/invoicing/recurring";
+import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { RECURRENCE_LABELS } from "@/lib/invoicing";
@@ -19,6 +20,7 @@ export function RecurringTable({ companyId, items, canManage, currency }: { comp
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<RecurringView | null>(null);
+  useResetOnHide(() => setToDelete(null));
 
   async function run(id: string, action: () => Promise<unknown>, message: string) {
     setBusy(id);
