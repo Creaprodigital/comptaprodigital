@@ -91,7 +91,7 @@ export function LoginForm() {
           title="Vérification en deux étapes"
           description="Saisissez le code à 6 chiffres affiché par votre application d'authentification, ou l'un de vos codes de secours."
         />
-        <form onSubmit={submitMfa} noValidate className="grid gap-5">
+        <form method="post" onSubmit={submitMfa} noValidate className="grid gap-5">
           <FormError message={formError} />
           <Field id="mfa-code" label="Code de vérification" required>
             <Input
@@ -126,7 +126,7 @@ export function LoginForm() {
           </>
         }
       />
-      <form onSubmit={submitCredentials} noValidate className="grid gap-5">
+      <form method="post" onSubmit={submitCredentials} noValidate className="grid gap-5">
         <FormError message={formError} />
         {unverified ? (
           <Alert variant="warning">

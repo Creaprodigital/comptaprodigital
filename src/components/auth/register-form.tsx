@@ -87,7 +87,7 @@ export function RegisterForm() {
           </>
         }
       />
-      <form onSubmit={onSubmit} noValidate className="grid gap-5">
+      <form method="post" onSubmit={onSubmit} noValidate className="grid gap-5">
         <FormError message={formError} />
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id="register-first-name" label="Prénom" error={errors.firstName} required>

@@ -71,7 +71,7 @@ export function VerifyEmail() {
         <h1 className="mt-6 text-2xl font-bold">Lien invalide ou expiré</h1>
         <p className="mt-3 text-muted-foreground">{state.message}</p>
       </div>
-      <form onSubmit={resend} noValidate className="mt-8 grid gap-4">
+      <form method="post" onSubmit={resend} noValidate className="mt-8 grid gap-4">
         <FormError message={resendState.error} />
         {resendState.done ? (
           <p className="rounded-xl bg-success-soft px-4 py-3 text-sm text-foreground" role="status">

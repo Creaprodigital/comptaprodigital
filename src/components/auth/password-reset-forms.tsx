@@ -53,7 +53,7 @@ export function ForgotPasswordForm() {
   return (
     <>
       <AuthHeading title="Mot de passe oublié" description="Indiquez l'adresse e-mail de votre compte : nous vous enverrons un lien pour choisir un nouveau mot de passe." />
-      <form onSubmit={onSubmit} noValidate className="grid gap-5">
+      <form method="post" onSubmit={onSubmit} noValidate className="grid gap-5">
         <FormError message={formError} />
         <Field id="forgot-email" label="Adresse e-mail" error={errors.email} required>
           <Input name="email" type="email" autoComplete="email" required />
@@ -114,7 +114,7 @@ export function ResetPasswordForm() {
   return (
     <>
       <AuthHeading title="Nouveau mot de passe" description="Choisissez un mot de passe que vous n'utilisez sur aucun autre service." />
-      <form onSubmit={onSubmit} noValidate className="grid gap-5">
+      <form method="post" onSubmit={onSubmit} noValidate className="grid gap-5">
         <FormError message={formError ?? errors.token ?? null} />
         <Field id="reset-password" label="Nouveau mot de passe" error={errors.password} required>
           <PasswordInput name="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />

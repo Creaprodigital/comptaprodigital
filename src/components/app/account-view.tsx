@@ -72,7 +72,7 @@ function ProfileCard({ profile }: { profile: AccountProfile }) {
         <CardDescription>Adresse de connexion : {profile.email}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form
+        <form method="post"
           noValidate
           className="grid gap-5"
           onSubmit={(event) => {
@@ -117,7 +117,7 @@ function PasswordCard() {
         <CardDescription>Le changement déconnecte vos autres appareils.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form
+        <form method="post"
           noValidate
           className="grid gap-5"
           onSubmit={(event) => {
@@ -210,7 +210,7 @@ function MfaCard({ enabled }: { enabled: boolean }) {
             </DialogDescription>
           </DialogHeader>
           {setup ? (
-            <form
+            <form method="post"
               noValidate
               className="grid gap-5"
               onSubmit={(event) => {
@@ -291,7 +291,7 @@ function MfaCard({ enabled }: { enabled: boolean }) {
             <DialogTitle>Désactiver la double authentification ?</DialogTitle>
             <DialogDescription>Votre compte ne sera plus protégé que par votre mot de passe.</DialogDescription>
           </DialogHeader>
-          <form
+          <form method="post"
             noValidate
             className="grid gap-5"
             onSubmit={(event) => {
