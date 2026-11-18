@@ -10,7 +10,7 @@ import { normalizeLabel } from "@/server/modules/bank/labels";
 import { refreshTransactionState } from "@/server/modules/bank/status";
 import { documentHistory, type HistoryEntry, type Meta } from "@/server/modules/invoicing/shared";
 import { syncAccountingFor } from "@/server/modules/accounting/sync";
-import { dec, sum, toMoneyString, ZERO } from "@/lib/money";
+import { dec, sum, toMoneyString } from "@/lib/money";
 import { fromIsoDate, toIsoDate, todayInParis, formatIsoForHumans } from "@/lib/dates";
 import type { PurchaseInput, SupplierInput } from "@/lib/schemas/accounting";
 

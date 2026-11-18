@@ -10,10 +10,14 @@ import { createCreditNote, createInvoiceDraft, issueInvoice, recordPayment } fro
 import { createPurchase, createSupplier, linkPurchasePayment } from "@/server/modules/purchases/service";
 import { createManualEntry, deleteDraftEntry, getEntry, listEntries, reverseEntry, updateManualEntry, validateDraftsThrough, validateEntries, type EntryView } from "@/server/modules/accounting/entries";
 import { resyncAll } from "@/server/modules/accounting/sync";
+import { autoLetter, bankReconciliation, generalLedger, letterLines, thirdPartyBalances, thirdPartyLines, trialBalance, trialBalanceCsv, unletter } from "@/server/modules/accounting/reports";
+import { closeFiscalYear, closingCheck, listFiscalYears, lockPeriod } from "@/server/modules/accounting/closing";
+import { createAsset, disposeAsset, getAsset, pendingDepreciations, postDepreciations, updateAsset } from "@/server/modules/accounting/assets";
+import { buildFec, checkFec, decodeLatin9, encodeLatin9 } from "@/server/modules/accounting/fec";
 import { bankAccountSchema, manualTransactionSchema, reconcileSchema, transactionUpdateSchema } from "@/lib/schemas/bank";
-import { manualEntrySchema, purchaseSchema, supplierSchema } from "@/lib/schemas/accounting";
+import { fixedAssetSchema, manualEntrySchema, purchaseSchema, supplierSchema } from "@/lib/schemas/accounting";
 import { customerSchema, invoiceSchema, paymentSchema } from "@/lib/schemas/invoicing";
-import { addDays, todayInParis } from "@/lib/dates";
+import { addDays, toIsoDate as toIso, todayInParis } from "@/lib/dates";
 import { createTestCompany, createVerifiedUser, prisma, resetDatabase } from "./helpers";
 
 const today = todayInParis();
@@ -215,5 +219,172 @@ describe("validation, intangibilité et corrections", () => {
     // Une écriture générée se corrige depuis sa pièce.
     const generated = await prisma.accountingEntry.findFirstOrThrow({ where: { companyId: access.company.id, sourceType: "INVOICE", status: "VALIDATED" } });
     await expectAppError(reverseEntry(access, userId, generated.id, {}), "ENTRY_GENERATED");
+  });
+});
+
+describe("états comptables", () => {
+  it("produit une balance équilibrée, avec et sans le brouillard", async () => {
+    const balance = await trialBalance(access);
+    expect(balance.balanced).toBe(true);
+    expect(balance.totals.debit).toBe(balance.totals.credit);
+    expect(balance.classes.map((c) => c.digit)).toEqual(expect.arrayContaining(["1", "4", "5", "6", "7"]));
+    const validatedOnly = await trialBalance(access, { includeDrafts: false });
+    expect(validatedOnly.balanced).toBe(true);
+    const csv = await trialBalanceCsv(access);
+    expect(csv).toContain("Compte;Intitulé;Total débit;Total crédit;Solde débiteur;Solde créditeur");
+    expect(csv).toContain("706000;Prestations de services;");
+  });
+
+  it("présente le grand livre d'un compte avec son solde progressif", async () => {
+    const ledger = await generalLedger(access, { account: "512" });
+    expect(ledger.accounts).toHaveLength(1);
+    const bank = ledger.accounts[0];
+    expect(bank.accountNumber).toBe("512000");
+    expect(bank.lines.at(-1)!.balance).toBe(bank.closing);
+    // Banque : 1000 (ouverture) − 120 − 600 + 120 = 400
+    expect(bank.closing).toBe("400.00");
+  });
+
+  it("établit l'état de rapprochement bancaire sans écart", async () => {
+    const state = await bankReconciliation(access, bankAccountId, today);
+    expect(state).toMatchObject({ bankBalance: "400.00", bookBalance: "400.00", difference: "0.00", missingEntries: [] });
+  });
+
+  it("lettre les comptes clients automatiquement et manuellement", async () => {
+    await validateDraftsThrough(access, userId, { through: today });
+    const before = await thirdPartyBalances(access, "customers");
+    expect(before[0]).toMatchObject({ accountNumber: "411000", auxiliaryNumber: "C00001", auxiliaryLabel: "Maison Verdier" });
+    const { groups } = await autoLetter(access, userId);
+    // Facture sur les débits et son avoir (client) ; facture d'achat et son décaissement (fournisseur).
+    expect(groups).toBe(2);
+    const lettered = (await thirdPartyLines(access, "411000", "C00001")).filter((l) => l.letter);
+    expect(lettered.map((l) => [l.letter, l.debit, l.credit])).toEqual([["A", "600.00", "0.00"], ["A", "0.00", "600.00"]]);
+    expect((await thirdPartyLines(access, "401000", "F00001")).every((l) => l.letter === "A")).toBe(true);
+    expect((await thirdPartyBalances(access, "suppliers"))[0]).toMatchObject({ auxiliaryLabel: "Cabinet Conseil", balance: "0.00", unletteredLines: 0 });
+    const open = (await thirdPartyLines(access, "411000", "C00001")).filter((l) => !l.letter && !l.draft);
+    await expectAppError(letterLines(access, userId, open.slice(0, 1).map((l) => l.id)), "VALIDATION_ERROR");
+    await unletter(access, userId, "411000", "A");
+    expect((await thirdPartyLines(access, "411000", "C00001")).some((l) => l.letter === "A")).toBe(false);
+  });
+});
+
+describe("immobilisations", () => {
+  let assetId: string;
+
+  it("inscrit un bien au registre et calcule son plan", async () => {
+    const year = Number(today.slice(0, 4));
+    const asset = await createAsset(access, userId, fixedAssetSchema.parse({ label: "Ordinateur portable", assetAccountNumber: "218300", acquisitionDate: `${year}-04-01`, serviceDate: `${year}-04-01`, cost: "3000", method: "LINEAR", durationMonths: 36 }));
+    assetId = asset.id;
+    expect(asset).toMatchObject({ depreciationAccountNumber: "281830", netBookValue: "3000.00", status: "ACTIVE" });
+    expect(asset.plan.map((p) => p.amount)).toEqual(["750.00", "1000.00", "1000.00", "250.00"]);
+  });
+
+  it("signale puis comptabilise les dotations de l'exercice", async () => {
+    const [current] = await listFiscalYears(access);
+    expect(await pendingDepreciations(access, current.id)).toEqual([{ assetId, label: "Ordinateur portable", planned: "750.00", recorded: null }]);
+    expect(await postDepreciations(access, userId, current.id)).toEqual({ assets: 1, total: "750.00" });
+    expect(await pendingDepreciations(access, current.id)).toEqual([]);
+    const [entry] = await entriesFor("DEPRECIATION", current.id);
+    expect(lines(entry)).toEqual(["281830 C 750.00", "681100 D 750.00"]);
+    expect((await getAsset(access, assetId)).netBookValue).toBe("2250.00");
+    await expectAppError(updateAsset(access, userId, assetId, fixedAssetSchema.parse({ label: "Autre", assetAccountNumber: "218300", acquisitionDate: today, serviceDate: today, cost: "1", durationMonths: 12 })), "ASSET_DEPRECIATED");
+  });
+
+  it("sort un bien de l'actif avec sa dotation complémentaire et son écriture de cession", async () => {
+    const disposed = await disposeAsset(access, userId, assetId, { date: today, salePrice: "1500" });
+    expect(disposed.status).toBe("DISPOSED");
+    const [entry] = await entriesFor("ASSET_DISPOSAL", assetId);
+    const cumulated = disposed.cumulated;
+    const net = (3000 - Number(cumulated)).toFixed(2);
+    expect(lines(entry)).toEqual([`218300 C 3000.00`, `281830 D ${cumulated}`, "462000 D 1500.00", `675000 D ${net}`, "775000 C 1500.00"].sort());
+  });
+});
+
+describe("verrouillage, clôture et FEC", () => {
+  it("refuse de verrouiller une période qui contient du brouillard", async () => {
+    const [current] = await listFiscalYears(access);
+    await expectAppError(lockPeriod(access, userId, current.id, today), "DRAFTS_REMAINING");
+    await validateDraftsThrough(access, userId, { through: current.endDate });
+    const locked = await lockPeriod(access, userId, current.id, d(3));
+    expect(locked.lockedThrough).toBe(d(3));
+    await expectAppError(lockPeriod(access, userId, current.id, d(5)), "VALIDATION_ERROR");
+    const od = (await prisma.accountingJournal.findFirstOrThrow({ where: { companyId: access.company.id, code: "OD" } })).id;
+    await expectAppError(createManualEntry(access, userId, manualEntrySchema.parse({ journalId: od, date: d(4), label: "Dans la période verrouillée", lines: [{ accountNumber: "471000", debit: "1" }, { accountNumber: "101300", credit: "1" }] })), "VALIDATION_ERROR");
+  });
+
+  it("reporte une correction d'une période verrouillée à la première date ouverte", async () => {
+    const tx = await prisma.bankTransaction.findFirstOrThrow({ where: { companyId: access.company.id, label: "CB PAPETERIE" } });
+    const rent = (await listCategories(access.company.id)).find((c) => c.name === "Loyer et charges locatives")!;
+    await updateTransaction(access, userId, tx.id, transactionUpdateSchema.parse({ categoryId: rent.id, vatRate: null }));
+    const drafts = (await entriesFor("BANK_TRANSACTION", tx.id)).filter((e) => e.status === "DRAFT");
+    expect(drafts.map((e) => e.date)).toEqual([d(2), d(2)]);
+    expect(drafts.every((e) => e.pieceDate === d(4))).toBe(true);
+    await validateDraftsThrough(access, userId, { through: today });
+  });
+
+  it("exporte un FEC conforme à la structure attendue", async () => {
+    await prisma.company.update({ where: { id: access.company.id }, data: { siren: "552100554" } });
+    access = await authorizeCompany(userId, access.company.id, "accounting:write");
+    const [current] = await listFiscalYears(access);
+    const fec = await buildFec(access, userId, current.id);
+    expect(fec.fileName).toBe(`552100554FEC${current.endDate.replace(/-/g, "")}.txt`);
+    expect(fec.provisional).toBe(true);
+    const check = checkFec(fec.content);
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+    expect(check.totalDebit).toBe(check.totalCredit);
+    const text = decodeLatin9(fec.content);
+    expect(text.split("\r\n")[0].split("\t")).toHaveLength(18);
+    expect(text).toContain("\tVT\t".slice(1)); // journal des ventes présent
+    expect(text).toMatch(/\t411000\tClients\tC00001\tMaison Verdier\t/);
+    expect(encodeLatin9("Écriture — 12 €").equals(Buffer.from([0xc9, 0x63, 0x72, 0x69, 0x74, 0x75, 0x72, 0x65, 0x20, 0x2d, 0x20, 0x31, 0x32, 0x20, 0xa4]))).toBe(true);
+  });
+
+  it("refuse de clôturer un exercice qui n'est pas terminé", async () => {
+    const [current] = await listFiscalYears(access);
+    expect((await closingCheck(access, current.id)).problems).toEqual([expect.stringContaining("ne peut être clôturé qu'après cette date")]);
+    await expectAppError(closeFiscalYear(access, userId, current.id), "CLOSING_NOT_READY");
+  });
+
+  it("clôture un exercice terminé et ouvre le suivant par des à-nouveaux", async () => {
+    const archivist = await createVerifiedUser({ email: "archives@exemple.test", plan: "PRO" });
+    const company = await createTestCompany(archivist.id, "Atelier Archives");
+    const archive = await authorizeCompany(archivist.id, company.id, "accounting:close");
+    const userId = archivist.id;
+    const previousYear = Number(today.slice(0, 4)) - 1;
+    const account = await createBankAccount(archive, userId, bankAccountSchema.parse({ name: "Compte courant" }));
+    const categories = await listCategories(company.id);
+    const sales = categories.find((c) => c.name === "Ventes et prestations")!;
+    const fees = categories.find((c) => c.name === "Honoraires")!;
+    const inflow = await createManualTransaction(archive, userId, manualTransactionSchema.parse({ bankAccountId: account.id, date: `${previousYear}-06-15`, label: "VIR CLIENT", direction: "IN", amount: "1000", categoryId: sales.id }));
+    await createManualTransaction(archive, userId, manualTransactionSchema.parse({ bankAccountId: account.id, date: `${previousYear}-07-01`, label: "VIR AVOCAT", direction: "OUT", amount: "200", categoryId: fees.id }));
+    const years = await listFiscalYears(archive);
+    const previous = years.find((y) => y.startDate === `${previousYear}-01-01`)!;
+    expect(previous).toMatchObject({ status: "OPEN", draftCount: 2 });
+
+    // Une écriture laissée en compte d'attente bloque la clôture.
+    const od = (await prisma.accountingJournal.findFirstOrThrow({ where: { companyId: company.id, code: "OD" } })).id;
+    await createManualEntry(archive, userId, manualEntrySchema.parse({ journalId: od, date: `${previousYear}-08-01`, label: "Apport à justifier", lines: [{ accountNumber: "512000", debit: "50" }, { accountNumber: "471000", credit: "50" }] }));
+    await validateDraftsThrough(archive, userId, { through: previous.endDate });
+    expect((await closingCheck(archive, previous.id)).problems).toEqual([expect.stringContaining("compte d'attente 471000")]);
+    const reclass = await createManualEntry(archive, userId, manualEntrySchema.parse({ journalId: od, date: `${previousYear}-12-31`, label: "Reclassement : apport en compte courant", lines: [{ accountNumber: "471000", debit: "50" }, { accountNumber: "455000", credit: "50" }] }));
+    await validateEntries(archive, userId, [reclass.id]);
+
+    const ready = await closingCheck(archive, previous.id);
+    expect(ready).toEqual({ ready: true, problems: [], result: "800.00" });
+    const { result, openingEntryId } = await closeFiscalYear(archive, userId, previous.id);
+    expect(result).toBe("800.00");
+    const after = await listFiscalYears(archive);
+    expect(after.find((y) => y.id === previous.id)).toMatchObject({ status: "CLOSED", lockedThrough: previous.endDate });
+    const opening = await getEntry(archive, openingEntryId!);
+    expect(opening).toMatchObject({ status: "VALIDATED", journal: { code: "AN" }, date: `${previousYear + 1}-01-01` });
+    expect(lines(opening)).toEqual(["120000 C 800.00", "455000 C 50.00", "512000 D 850.00"]);
+    await expectAppError(closeFiscalYear(archive, userId, previous.id), "CLOSING_NOT_READY");
+
+    // Plus aucune écriture dans l'exercice clôturé ; une correction est reportée sur l'exercice ouvert.
+    await expectAppError(createManualEntry(archive, userId, manualEntrySchema.parse({ journalId: od, date: `${previousYear}-12-01`, label: "Trop tard", lines: [{ accountNumber: "471000", debit: "1" }, { accountNumber: "101300", credit: "1" }] })), "VALIDATION_ERROR");
+    await updateTransaction(archive, userId, inflow.id, transactionUpdateSchema.parse({ categoryId: categories.find((c) => c.name === "Autres produits")!.id }));
+    const corrections = (await prisma.accountingEntry.findMany({ where: { companyId: company.id, sourceType: "BANK_TRANSACTION", sourceId: inflow.id, status: "DRAFT" } })).map((e) => toIso(e.date));
+    expect(corrections).toEqual([`${previousYear + 1}-01-01`, `${previousYear + 1}-01-01`]);
   });
 });
