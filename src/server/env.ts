@@ -44,9 +44,11 @@ const envSchema = z
     S3_SECRET_ACCESS_KEY: z.string().optional(),
     /** Adressage « chemin » (MinIO, la plupart des offres compatibles S3) plutôt que par sous-domaine. */
     S3_FORCE_PATH_STYLE: booleanString.default(true),
-    // Renseignés dans une phase ultérieure (abonnements).
+    /** Abonnements : clé secrète Stripe (sk_test_… ou sk_live_…) et secret de signature des webhooks (whsec_…). */
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    /** Réservé aux tests : adresse d'un faux serveur Stripe (interdit en production). */
+    STRIPE_API_BASE: z.url().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.NODE_ENV === "production" && !value.SMTP_HOST) {
@@ -55,6 +57,12 @@ const envSchema = z
         path: ["SMTP_HOST"],
         message: "SMTP_HOST est requis en production (vérification d'e-mail, réinitialisation de mot de passe)",
       });
+    }
+    if (value.NODE_ENV === "production" && value.STRIPE_API_BASE) {
+      ctx.addIssue({ code: "custom", path: ["STRIPE_API_BASE"], message: "STRIPE_API_BASE est réservé aux tests" });
+    }
+    if (value.STRIPE_SECRET_KEY && !value.STRIPE_WEBHOOK_SECRET && value.NODE_ENV === "production") {
+      ctx.addIssue({ code: "custom", path: ["STRIPE_WEBHOOK_SECRET"], message: "STRIPE_WEBHOOK_SECRET est requis lorsque Stripe est configuré" });
     }
     if (value.STORAGE_DRIVER === "s3") {
       for (const key of ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const) {

@@ -63,7 +63,57 @@ function render({ to, subject, greeting, paragraphs, action, footnote, replyTo, 
   return { to, subject, text, html, replyTo };
 }
 
+const euros = (amount: string) => `${amount.replace(".", ",")} €`;
+const longDate = (date: Date) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(date);
+
 export const mailTemplates = {
+  paymentFailed(to: string, firstName: string, amount: string) {
+    return render({
+      to,
+      subject: `Échec du paiement de votre abonnement — ${siteConfig.name}`,
+      greeting: `Bonjour ${firstName},`,
+      paragraphs: [
+        `Le paiement de ${euros(amount)} pour votre abonnement n'a pas pu être effectué.`,
+        "Stripe, notre prestataire de paiement, tentera à nouveau le prélèvement dans les prochains jours. Pour éviter toute interruption, vérifiez ou mettez à jour votre moyen de paiement.",
+      ],
+      action: { label: "Gérer mon abonnement", url: appUrl("/app/abonnement") },
+    });
+  },
+  trialEnding(to: string, firstName: string, planName: string, endsAt: Date) {
+    return render({
+      to,
+      subject: `Votre essai se termine le ${longDate(endsAt)} — ${siteConfig.name}`,
+      greeting: `Bonjour ${firstName},`,
+      paragraphs: [
+        `Votre période d'essai de la formule ${planName} se termine le ${longDate(endsAt)}.`,
+        "Pour continuer à utiliser toutes les fonctionnalités, souscrivez votre abonnement. Sans souscription, vos données restent consultables et exportables, mais ne peuvent plus être modifiées.",
+      ],
+      action: { label: "Choisir mon abonnement", url: appUrl("/app/abonnement") },
+    });
+  },
+  supportReply(to: string, name: string, reference: string, subject: string, message: string, inApp: boolean) {
+    return render({
+      to,
+      subject: `Réponse à votre demande ${reference} — ${siteConfig.name}`,
+      greeting: `Bonjour ${name},`,
+      paragraphs: [`Notre équipe a répondu à votre demande « ${subject} » :`, message],
+      ...(inApp ? { action: { label: "Voir la conversation", url: appUrl("/app/support") } } : {}),
+      footnote: inApp ? undefined : "Pour nous répondre, répondez simplement à cet e-mail.",
+    });
+  },
+  adminAccessGranted(to: string, firstName: string, companyName: string, reason: string, expiresAt: Date) {
+    return render({
+      to,
+      subject: `Accès du support aux données de ${companyName} — ${siteConfig.name}`,
+      greeting: `Bonjour ${firstName},`,
+      paragraphs: [
+        `Un administrateur de ${siteConfig.name} a ouvert un accès en lecture aux données de « ${companyName} » jusqu'au ${longDate(expiresAt)} (${expiresAt.toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}).`,
+        `Motif indiqué : ${reason}`,
+        "Chaque consultation est journalisée. Vous pouvez révoquer cet accès à tout moment depuis la page Équipe et accès de l'entreprise.",
+      ],
+      action: { label: "Voir les accès", url: appUrl("/app/entreprise/equipe") },
+    });
+  },
   verifyEmail(to: string, firstName: string, token: string) {
     return render({
       to,

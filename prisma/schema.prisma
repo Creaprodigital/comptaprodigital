@@ -48,6 +48,8 @@ model User {
   failedLoginCount   Int        @default(0)
   lockedUntil        DateTime?
   lastLoginAt        DateTime?
+  suspendedAt        DateTime?
+  suspendedReason    String?    @db.VarChar(255)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   deletedAt          DateTime?
@@ -435,6 +437,12 @@ model Subscription {
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   canceledAt           DateTime?
+  /// Montant facturé par période (prix Stripe en vigueur pour cet abonnement), pour le calcul du MRR.
+  priceAmount          Decimal?           @db.Decimal(10, 2)
+  /// Dernier échec de paiement signalé par Stripe (remis à zéro au paiement suivant).
+  paymentFailedAt      DateTime?
+  /// Rappel de fin d'essai envoyé.
+  trialReminderSentAt  DateTime?
   stripeCustomerId     String?            @unique @db.VarChar(100)
   stripeSubscriptionId String?            @unique @db.VarChar(100)
   createdAt            DateTime           @default(now())
@@ -464,6 +472,7 @@ model SubscriptionPayment {
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
+  @@index([status, paidAt])
   @@map("subscription_payments")
 }
 
@@ -1564,6 +1573,8 @@ model AdminDataAccessGrant {
   reason      String    @db.VarChar(500)
   expiresAt   DateTime
   revokedAt   DateTime?
+  /// Révoqué par le propriétaire de l'entreprise (sinon par l'administrateur).
+  revokedById String?
   createdAt   DateTime  @default(now())
 
   admin   User    @relation(fields: [adminUserId], references: [id], onDelete: Cascade)

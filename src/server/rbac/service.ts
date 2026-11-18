@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { AppError, errors } from "@/server/http/errors";
 import type { PermissionKey } from "@/server/rbac/permissions";
 import { tenantDb, type TenantDb } from "@/server/tenancy/tenant-db";
+import { isCompanyReadOnly } from "@/server/billing/standing";
 
 /**
  * Contrôle d'accès : toute opération sur les données d'une entreprise passe par
@@ -85,7 +86,20 @@ export async function authorizeCompany(
     throw new AppError(403, "COMPANY_ARCHIVED", "Cette entreprise est archivée.");
   }
   if (!access.permissions.has(permission)) throw errors.forbidden();
+  // Abonnement du propriétaire inactif : consultation et exports restent possibles, pas les modifications.
+  if (isMutatingPermission(permission) && (await isCompanyReadOnly(companyId))) {
+    throw new AppError(
+      402,
+      "SUBSCRIPTION_INACTIVE",
+      "L'abonnement de cette entreprise n'est plus actif : vos données restent consultables et exportables, mais ne peuvent plus être modifiées. Le titulaire peut réactiver l'abonnement depuis la page Abonnement.",
+    );
+  }
   return access;
+}
+
+/** Droits qui modifient des données (les droits de consultation et d'export restent ouverts en lecture seule). */
+export function isMutatingPermission(permission: PermissionKey): boolean {
+  return !permission.endsWith(":read") && permission !== "exports:run";
 }
 
 export function can(access: Pick<CompanyAccess, "permissions">, permission: PermissionKey): boolean {

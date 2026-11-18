@@ -6,6 +6,7 @@ import { runRecurringInvoices } from "../src/server/modules/invoicing/recurring"
 import { runAutomaticReminders } from "../src/server/modules/invoicing/sending";
 import { purgeDeletedDocuments } from "../src/server/modules/documents/service";
 import { resyncAll } from "../src/server/modules/accounting/sync";
+import { runTrialJobs } from "../src/server/billing/service";
 
 /**
  * Tâches quotidiennes : factures récurrentes, relances automatiques, contrôle des
@@ -19,6 +20,8 @@ async function main() {
   console.log(`Factures récurrentes : ${recurring.generated} générée(s), ${recurring.issued} émise(s), ${recurring.sent} envoyée(s), ${recurring.errors} erreur(s)`);
   const reminders = await runAutomaticReminders();
   console.log(`Relances : ${reminders.sent} envoyée(s), ${reminders.skipped} en attente, ${reminders.errors} erreur(s)`);
+  const trials = await runTrialJobs();
+  console.log(`Essais : ${trials.reminded} rappel(s) envoyé(s), ${trials.expired} essai(s) terminé(s)`);
   // Filet de sécurité : recalcul des écritures automatiques (sans effet si tout est à jour).
   const companies = await prisma.company.findMany({ where: { status: "ACTIVE", accountingMode: "DOUBLE_ENTRY" }, select: { id: true, fiscalYearStartMonth: true, accountingMode: true } });
   let accountingChanges = 0;
@@ -36,6 +39,8 @@ async function main() {
   const counters = await purgeExpiredRateLimits();
   const documents = await purgeDeletedDocuments();
   console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit, ${documents} document(s) supprimé(s) depuis plus de 30 jours`);
+  // Dernière exécution, affichée dans la supervision de l'administration.
+  await prisma.applicationSetting.upsert({ where: { key: "jobs.daily.last_run" }, create: { key: "jobs.daily.last_run", value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt }, description: "Dernière exécution des tâches quotidiennes" }, update: { value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt } } });
   console.log(`Terminé en ${Date.now() - startedAt} ms`);
   if (recurring.errors + reminders.errors + accountingErrors > 0) process.exitCode = 1;
 }

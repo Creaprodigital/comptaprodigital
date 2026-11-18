@@ -37,3 +37,17 @@ export async function markNotificationsRead(userId: string, ids?: string[]): Pro
   });
   return result.count;
 }
+
+/** Crée une notification dans l'espace de l'utilisateur. Les liens sont toujours internes. */
+export async function notify(userId: string, input: { type: string; title: string; body?: string; link?: string; companyId?: string | null }): Promise<void> {
+  await prisma.notification.create({
+    data: {
+      userId,
+      companyId: input.companyId ?? null,
+      type: input.type.slice(0, 50),
+      title: input.title.slice(0, 191),
+      body: input.body ?? null,
+      link: input.link && input.link.startsWith("/") ? input.link.slice(0, 255) : null,
+    },
+  });
+}

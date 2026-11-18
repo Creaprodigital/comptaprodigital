@@ -6,6 +6,7 @@ import type { CompanyAccess } from "@/server/rbac/service";
 import { getUserPlanLimits } from "@/server/modules/plans/service";
 import { fiscalYearBounds } from "@/server/modules/companies/fiscal-year";
 import { accountingModeFor } from "@/config/legal";
+import { isUserReadOnly } from "@/server/billing/standing";
 import { frenchVatNumberFromSiren } from "@/lib/identifiers";
 import { fromIsoDate, todayInParis } from "@/lib/dates";
 import type { CreateCompanyInput, UpdateCompanyInput } from "@/lib/schemas/company";
@@ -56,6 +57,9 @@ export async function createCompany(userId: string, input: CreateCompanyInput, m
   const plan = await getUserPlanLimits(userId);
   if (!plan) {
     throw new AppError(402, "SUBSCRIPTION_REQUIRED", "Un abonnement est nécessaire pour créer une entreprise.");
+  }
+  if (await isUserReadOnly(userId)) {
+    throw new AppError(402, "SUBSCRIPTION_INACTIVE", "Votre abonnement n'est plus actif : réactivez-le depuis la page Abonnement pour créer une entreprise.");
   }
   const owned = await countOwnedCompanies(userId);
   if (plan.limits.maxCompanies !== null && owned >= plan.limits.maxCompanies) {
