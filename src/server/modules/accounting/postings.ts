@@ -105,7 +105,7 @@ async function invoiceEntry(tx: Tx, company: CompanyRef, invoiceId: string): Pro
     where: { id: invoiceId, companyId: company.id },
     include: { customer: true, items: { include: { product: { select: { accountNumber: true, type: true } } }, orderBy: { position: "asc" } } },
   });
-  if (!invoice || invoice.status === "DRAFT" || !invoice.number || !invoice.issueDate) return null;
+  if (!invoice || invoice.status === "DRAFT" || invoice.status === "CANCELLED" || !invoice.number || !invoice.issueDate) return null;
   const aux = await customerAux(tx, company.id, invoice.customer);
   const isCredit = invoice.type === "CREDIT_NOTE";
   const label = `${isCredit ? "Avoir" : invoice.type === "DEPOSIT" ? "Facture d'acompte" : "Facture"} ${invoice.number} — ${invoice.customer.name}`;

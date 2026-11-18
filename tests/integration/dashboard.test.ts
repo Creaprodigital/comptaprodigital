@@ -103,7 +103,7 @@ beforeAll(async () => {
   const t1 = await tx("2026-11-10", "VIR CLIENT F-2026-0004", "1200.00", { categoryId: category("Ventes et prestations"), status: "RECONCILED" });
   await tx("2026-11-07", "PRLV FIBRE", "-120.00", { purchaseId: telecom.id, categoryId: category("Télécom et internet"), status: "RECONCILED" });
   const t3 = await tx("2026-11-05", "FRAIS BANCAIRES", "-55.00", { categoryId: category("Frais bancaires") });
-  await tx("2026-11-09", "CB FOURNITURES", "-110.00", { vatAmount: "10.00", status: "TO_REVIEW" });
+  await tx("2026-11-09", "CB FOURNITURES", "-110.00", { vatRate: "10.00", vatAmount: "10.00", status: "TO_REVIEW" });
   await tx("2026-11-10", "PRLV DGFIP TVA", "-2000.00", { categoryId: category("TVA reversée") });
   await tx("2026-11-11", "VIR VERS LIVRET", "-500.00", { categoryId: category("Virement interne") });
   await tx("2026-11-12", "VIR SALAIRE", "-1500.00", { categoryId: category("Salaires") });
@@ -167,18 +167,19 @@ describe("tableau de bord — calculs", () => {
   it("TVA estimée : encaissements au prorata, débits à la facturation, avoirs déduits", () => {
     // Encaissements : 1 200 × 200/1 200 = 200 ; 600 × 400/2 400 = 100
     // Débits : 100 ; avoir : −20 → collectée 380
-    // Déductible : 60 + 20 (achats) + 10 (opération bancaire) = 90
-    expect(dashboard.kpis.periodVat).toEqual({ collected: "380.00", deductible: "90.00", net: "290.00" });
+    // Déductible : 20 (fibre, service payé) + 10 (opération bancaire) = 30. Le loyer, service
+    // non encore payé, n'ouvre pas encore droit à déduction.
+    expect(dashboard.kpis.periodVat).toEqual({ collected: "380.00", deductible: "30.00", net: "350.00" });
   });
 
   it("position bancaire : comptes actifs uniquement", () => {
     // 10 000 + 1 200 − 120 − 55 − 110 − 2 000 − 500 − 1 500 + 600 − 80 = 7 435
     expect(dashboard.kpis.bankBalance).toBe("7435.00");
     expect(dashboard.kpis.bankAccountCount).toBe(1);
-    // Trésorerie disponible : 7 435 − 290 (TVA de la période en cours) − 360 (fournisseur à payer) = 6 785
-    expect(dashboard.kpis.vatProvision).toBe("290.00");
+    // Trésorerie disponible : 7 435 − 350 (TVA de la période en cours) − 360 (fournisseur à payer) = 6 725
+    expect(dashboard.kpis.vatProvision).toBe("350.00");
     expect(dashboard.kpis.supplierDebt).toBe("360.00");
-    expect(dashboard.kpis.availableCash).toBe("6785.00");
+    expect(dashboard.kpis.availableCash).toBe("6725.00");
   });
 
   it("créances : restes à encaisser TTC et factures échues", () => {
@@ -231,7 +232,8 @@ describe("tableau de bord — calculs", () => {
     expect(week.range).toEqual({ preset: "7d", from: "2026-11-07", to: "2026-11-13" });
     expect(week.kpis.periodRevenue).toBe("400.00"); // 500 − 100
     expect(week.kpis.periodExpenses).toBe("1600.00"); // 100 + 1 500
-    expect(week.kpis.periodVat).toEqual({ collected: "280.00", deductible: "10.00", net: "270.00" }); // 200 + 100 − 20 ; 10
+    // 200 + 100 − 20 ; 20 (fibre payée le 07/11) + 10
+    expect(week.kpis.periodVat).toEqual({ collected: "280.00", deductible: "30.00", net: "250.00" });
     // Les indicateurs de situation ne dépendent pas du filtre.
     expect(week.kpis.bankBalance).toBe("7435.00");
     expect(week.kpis.revenueFiscalYear).toBe("6400.00");

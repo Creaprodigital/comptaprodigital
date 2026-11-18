@@ -134,7 +134,7 @@ export async function syncAccountingFor(company: CompanyRef, refs: SourceRef[]):
 /** Toutes les pièces susceptibles de produire une écriture, y compris celles dont l'écriture doit disparaître. */
 async function allSourceRefs(companyId: string): Promise<SourceRef[]> {
   const [invoices, payments, purchases, transactions, accounts, depreciations, disposals, vatPeriods, existing] = await Promise.all([
-    prisma.invoice.findMany({ where: { companyId, status: { not: "DRAFT" }, number: { not: null } }, select: { id: true } }),
+    prisma.invoice.findMany({ where: { companyId, status: { notIn: ["DRAFT", "CANCELLED"] }, number: { not: null } }, select: { id: true } }),
     prisma.payment.findMany({ where: { companyId }, select: { id: true } }),
     prisma.purchase.findMany({ where: { companyId }, select: { id: true } }),
     prisma.bankTransaction.findMany({ where: { companyId }, select: { id: true } }),

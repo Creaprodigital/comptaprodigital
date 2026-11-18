@@ -2,7 +2,7 @@ import { Prisma, type Company } from "@prisma/client";
 import Decimal from "decimal.js";
 import { prisma } from "@/server/db";
 import { tenantDb } from "@/server/tenancy/tenant-db";
-import { dec, roundMoney, toMoneyString, vatShareOfPayment, ZERO } from "@/lib/money";
+import { dec, toMoneyString, ZERO } from "@/lib/money";
 import {
   addDays,
   addMonths,
@@ -19,6 +19,7 @@ import {
 import { fiscalYearBounds } from "@/server/modules/companies/fiscal-year";
 import { resolveDateRange, type DateRange } from "@/server/modules/dashboard/periods";
 import { currentVatPeriod, nextVatDeadline } from "@/server/modules/dashboard/vat-deadlines";
+import { computeVat } from "@/server/modules/vat/compute";
 
 /**
  * Tableau de bord : tous les indicateurs sont calculés à partir des données
@@ -185,43 +186,14 @@ async function expensesByCategory(companyId: string, from: IsoDate, to: IsoDate)
     .map(([name, value]) => ({ name, color: value.color, amount: toMoneyString(value.amount) }));
 }
 
-/** Estimation de la TVA sur une période (voir définitions en tête de fichier). */
+/**
+ * Estimation de la TVA sur une période : mêmes règles que la préparation des
+ * déclarations et la comptabilisation (voir vat/compute.ts).
+ */
 export async function estimateVat(companyId: string, from: IsoDate, to: IsoDate) {
-  const db = tenantDb(companyId);
-  const [onDebits, creditNotesOnPayments, payments, purchases, bank] = await Promise.all([
-    // TVA exigible à la facturation.
-    prisma.$queryRaw<TypedSumRow[]>`
-      SELECT type, SUM(totalVat) AS total FROM invoices
-      WHERE companyId = ${companyId} AND status IN (${issuedStatusesSql}) AND vatExigibility = 'DEBITS'
-        AND issueDate BETWEEN ${from} AND ${to}
-      GROUP BY type`,
-    // Avoirs sur factures à l'encaissement : déduits à leur date d'émission.
-    prisma.$queryRaw<SumRow[]>`
-      SELECT SUM(totalVat) AS total FROM invoices
-      WHERE companyId = ${companyId} AND status IN (${issuedStatusesSql}) AND vatExigibility = 'ENCAISSEMENTS'
-        AND type = 'CREDIT_NOTE' AND issueDate BETWEEN ${from} AND ${to}`,
-    // TVA exigible à l'encaissement : prorata de chaque règlement.
-    db.payment.findMany({
-      where: {
-        paidAt: { gte: fromIsoDate(from), lte: fromIsoDate(to) },
-        invoice: { vatExigibility: "ENCAISSEMENTS", type: { in: ["INVOICE", "DEPOSIT"] } },
-      },
-      select: { amount: true, invoice: { select: { totalVat: true, totalInclTax: true } } },
-    }),
-    prisma.$queryRaw<SumRow[]>`
-      SELECT SUM(totalVat) AS total FROM purchases
-      WHERE companyId = ${companyId} AND status IN ('TO_PAY', 'PAID') AND issueDate BETWEEN ${from} AND ${to}`,
-    prisma.$queryRaw<SumRow[]>`
-      SELECT SUM(vatAmount) AS total FROM bank_transactions
-      WHERE companyId = ${companyId} AND amount < 0 AND purchaseId IS NULL AND \`date\` BETWEEN ${from} AND ${to}`,
-  ]);
-
-  const collectedOnPayments = payments.reduce(
-    (acc, p) => acc.plus(vatShareOfPayment(p.amount, p.invoice.totalVat, p.invoice.totalInclTax)),
-    ZERO,
-  );
-  const collected = roundMoney(netOfCreditNotes(onDebits).plus(collectedOnPayments).minus(dec(creditNotesOnPayments[0]?.total)));
-  const deductible = roundMoney(dec(purchases[0]?.total).plus(dec(bank[0]?.total)));
+  const result = await computeVat(companyId, from, to);
+  const collected = dec(result.collected);
+  const deductible = dec(result.deductible);
   return { collected, deductible, net: collected.minus(deductible) };
 }
 
