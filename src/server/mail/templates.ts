@@ -67,6 +67,14 @@ const euros = (amount: string) => `${amount.replace(".", ",")} €`;
 const longDate = (date: Date) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(date);
 
 export const mailTemplates = {
+  adminTest(to: string) {
+    return render({
+      to,
+      subject: `E-mail de test — ${siteConfig.name}`,
+      greeting: "Bonjour,",
+      paragraphs: ["Cet e-mail de test a été envoyé depuis l'administration pour vérifier la configuration d'envoi (serveur SMTP, nom d'expéditeur, adresse de réponse et pied de page)."],
+    });
+  },
   paymentFailed(to: string, firstName: string, amount: string) {
     return render({
       to,

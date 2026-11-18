@@ -191,3 +191,19 @@ export function created(data: unknown): Response {
 export function noContent(): Response {
   return new Response(null, { status: 204 });
 }
+
+/**
+ * Route de l'administration : session valide, super administrateur, double
+ * authentification activée. Les autres comptes reçoivent une 404.
+ */
+export function adminRoute<
+  P = Record<string, never>,
+  B extends z.ZodType | undefined = undefined,
+  Q extends z.ZodType | undefined = undefined,
+>(options: RouteOptions<B, Q>, handler: (ctx: AuthedContext<P, Infer<B>, Infer<Q>>) => Promise<unknown>) {
+  return authRoute<P, B, Q>(options, async (ctx) => {
+    const { assertSuperAdmin } = await import("@/server/admin/guard-core");
+    assertSuperAdmin(ctx.auth);
+    return handler(ctx);
+  });
+}

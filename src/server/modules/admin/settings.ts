@@ -1,3 +1,4 @@
+import { recordAudit } from "@/server/audit/audit";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
@@ -94,13 +95,21 @@ export async function getSetting<K extends SettingKey>(key: K): Promise<SettingV
   return (parsed.success ? parsed.data : definition.default) as SettingValue<K>;
 }
 
+function kindOf(key: SettingKey): "boolean" | "int" | "enum" | "text" | "line" {
+  const definition = SETTINGS[key];
+  if (typeof definition.default === "boolean") return "boolean";
+  if (typeof definition.default === "number") return "int";
+  if (definition.schema instanceof z.ZodEnum) return "enum";
+  return key === "mail.footer" ? "text" : "line";
+}
+
 export async function listSettings() {
   const values = await loadAll();
   return (Object.keys(SETTINGS) as SettingKey[]).map((key) => {
     const definition = SETTINGS[key];
     const raw = values.get(key);
     const parsed = raw === undefined ? null : (definition.schema as z.ZodType).safeParse(raw);
-    return { key, group: definition.group, label: definition.label, description: definition.description, value: parsed?.success ? parsed.data : definition.default, isDefault: raw === undefined, kind: typeof definition.default === "boolean" ? "boolean" : typeof definition.default === "number" ? "number" : key === "billing.enforcement" ? "enum" : "text" };
+    return { key, group: definition.group, label: definition.label, description: definition.description, value: parsed?.success ? parsed.data : definition.default, isDefault: raw === undefined, kind: kindOf(key), options: definition.schema instanceof z.ZodEnum ? (definition.schema.options as string[]) : undefined };
   });
 }
 
@@ -115,4 +124,5 @@ export async function updateSetting(key: string, value: unknown, adminId: string
     update: { value: parsed.data as Prisma.InputJsonValue, updatedById: adminId },
   });
   invalidateSettingsCache();
+  await recordAudit({ action: "admin.setting_update", userId: adminId, actorType: "SUPER_ADMIN", entityType: "ApplicationSetting", entityId: key, metadata: { value: parsed.data as Prisma.InputJsonValue } });
 }

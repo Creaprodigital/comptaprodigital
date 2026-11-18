@@ -15,6 +15,8 @@ export const MAIL_DIR = path.join(__dirname, "test-results", "mails");
 const databaseUrl =
   process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL?.replace(/\/([^/?]+)(\?.*)?$/, "/$1_e2e$2");
 if (!databaseUrl) throw new Error("DATABASE_URL (ou E2E_DATABASE_URL) est requis pour les tests de bout en bout");
+/** Base dédiée aux tests de bout en bout (utilisée aussi pour préparer un super administrateur). */
+export const E2E_DATABASE_URL = databaseUrl;
 
 export default defineConfig({
   testDir: "tests/e2e",
