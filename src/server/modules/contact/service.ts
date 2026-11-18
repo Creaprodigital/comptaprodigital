@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { supportReference } from "@/server/modules/support/service";
 import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import { sendMail } from "@/server/mail/mailer";
@@ -6,9 +6,7 @@ import { mailTemplates } from "@/server/mail/templates";
 import type { ContactInput } from "@/lib/schemas/contact";
 
 function ticketReference(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const suffix = Array.from(randomBytes(8), (b) => alphabet[b % alphabet.length]).join("");
-  return `CT-${suffix}`;
+  return supportReference().replace("SP-", "CT-");
 }
 
 /**

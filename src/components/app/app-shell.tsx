@@ -10,6 +10,9 @@ import {
   ContactRoundIcon,
   FileSignatureIcon,
   FolderOpenIcon,
+  CreditCardIcon,
+  LifeBuoyIcon,
+  ShieldEllipsisIcon,
   BookOpenCheckIcon,
   PercentIcon,
   ShoppingCartIcon,
@@ -93,6 +96,8 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Mes entreprises", href: "/app/entreprises", icon: Building2Icon },
       { label: "Compte et sécurité", href: "/app/compte", icon: UserCogIcon },
+      { label: "Abonnement", href: "/app/abonnement", icon: CreditCardIcon },
+      { label: "Support", href: "/app/support", icon: LifeBuoyIcon },
     ],
   },
 ];
@@ -159,10 +164,12 @@ function CompanySwitcher({ companies, activeId }: { companies: ShellCompany[]; a
 function SidebarContent({
   companies,
   activeId,
+  isSuperAdmin,
   onNavigate,
 }: {
   companies: ShellCompany[];
   activeId: string | null;
+  isSuperAdmin?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -209,6 +216,11 @@ function SidebarContent({
         ))}
       </nav>
 
+      {isSuperAdmin ? (
+        <Link href="/admin" onClick={onNavigate} className="flex items-center gap-3 rounded-lg border border-sidebar-border px-3 py-2 text-sm font-medium transition-colors outline-none hover:bg-sidebar-accent hover:text-white focus-visible:ring-2 focus-visible:ring-ring">
+          <ShieldEllipsisIcon className="size-[18px] shrink-0 text-emerald-400" aria-hidden="true" /> Administration
+        </Link>
+      ) : null}
       <p className="flex items-start gap-2 rounded-xl border border-sidebar-border px-3 py-2.5 text-xs leading-relaxed text-sidebar-muted">
         <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />
         Données cloisonnées par entreprise et connexions chiffrées.
@@ -221,11 +233,15 @@ export function AppShell({
   user,
   companies,
   activeCompanyId,
+  isSuperAdmin = false,
+  banners,
   children,
 }: {
   user: ShellUser;
   companies: ShellCompany[];
   activeCompanyId: string | null;
+  isSuperAdmin?: boolean;
+  banners?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -233,7 +249,7 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-1">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 lg:block">
-        <SidebarContent companies={companies} activeId={activeCompanyId} />
+        <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -247,7 +263,7 @@ export function AppShell({
             <SheetContent side="left" className="text-white">
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <SheetDescription className="sr-only">Navigation de l'espace client</SheetDescription>
-              <SidebarContent companies={companies} activeId={activeCompanyId} onNavigate={() => setMobileOpen(false)} />
+              <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} onNavigate={() => setMobileOpen(false)} />
             </SheetContent>
           </Sheet>
 
@@ -299,7 +315,10 @@ export function AppShell({
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-7xl">{children}</div>
+          <div className="mx-auto w-full max-w-7xl">
+            {banners}
+            {children}
+          </div>
         </main>
       </div>
     </div>

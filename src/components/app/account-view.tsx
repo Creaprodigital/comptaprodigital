@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CopyIcon, DownloadIcon, KeyRoundIcon, Loader2Icon, MonitorSmartphoneIcon, ShieldCheckIcon, ShieldOffIcon } from "lucide-react";
@@ -432,6 +433,9 @@ export function AccountView({
             ) : (
               <p className="text-sm text-muted-foreground">Aucun abonnement n'est associé à ce compte.</p>
             )}
+            <Button asChild variant="outline" size="sm" className="mt-4">
+              <Link href="/app/abonnement">Gérer l'abonnement</Link>
+            </Button>
           </CardContent>
         </Card>
 

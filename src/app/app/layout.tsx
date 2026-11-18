@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAppContext } from "@/server/auth/guards";
 import { AppShell } from "@/components/app/app-shell";
+import { AppBanners } from "@/components/app/banners";
+import { bannersFor } from "@/server/billing/banners";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata: Metadata = {
@@ -29,11 +31,14 @@ function ShellSkeleton() {
 /** Lit la session (donnée de requête) : rendu derrière la frontière Suspense du layout. */
 async function AuthenticatedShell({ children }: { children: React.ReactNode }) {
   const { auth, companies, access } = await getAppContext();
+  const banners = await bannersFor(auth.user.id, access?.company.id ?? null);
   return (
     <AppShell
       user={{ firstName: auth.user.firstName, lastName: auth.user.lastName, email: auth.user.email }}
       companies={companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }))}
       activeCompanyId={access?.company.id ?? null}
+      isSuperAdmin={auth.user.isSuperAdmin}
+      banners={<AppBanners banners={banners} />}
     >
       {children}
     </AppShell>
