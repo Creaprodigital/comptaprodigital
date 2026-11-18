@@ -315,7 +315,6 @@ export async function unletter(access: CompanyAccess, userId: string, accountNum
  * le groupe s'équilibre exactement.
  */
 export async function autoLetter(access: CompanyAccess, userId: string, meta: Meta = {}): Promise<{ groups: number }> {
-  const companyId = access.company.id;
   const accounts = await access.db.accountingAccount.findMany({ where: { number: { in: [...THIRD_PARTY_ACCOUNTS.customers, ...THIRD_PARTY_ACCOUNTS.suppliers] } } });
   const lines = await access.db.accountingEntryLine.findMany({
     where: { accountId: { in: accounts.map((a) => a.id) }, letter: null, entry: { status: "VALIDATED", fiscalYear: { status: "OPEN" } } },

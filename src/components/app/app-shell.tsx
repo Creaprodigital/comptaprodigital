@@ -10,6 +10,9 @@ import {
   ContactRoundIcon,
   FileSignatureIcon,
   FolderOpenIcon,
+  BookOpenCheckIcon,
+  PercentIcon,
+  ShoppingCartIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
   LogOutIcon,
@@ -67,6 +70,14 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Banque", href: "/app/banque", icon: LandmarkIcon, requiresCompany: true },
       { label: "Documents", href: "/app/documents", icon: FolderOpenIcon, requiresCompany: true },
+    ],
+  },
+  {
+    title: "Comptabilité",
+    items: [
+      { label: "Achats", href: "/app/achats", icon: ShoppingCartIcon, requiresCompany: true },
+      { label: "Comptabilité", href: "/app/comptabilite", icon: BookOpenCheckIcon, requiresCompany: true },
+      { label: "TVA", href: "/app/tva", icon: PercentIcon, requiresCompany: true },
     ],
   },
   {

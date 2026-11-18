@@ -7,6 +7,7 @@ import { AppError } from "@/server/http/errors";
 import { companyHasModule } from "@/server/modules/plans/service";
 import { listCategories } from "@/server/modules/bank/categories";
 import { suggestReconciliation } from "@/server/modules/bank/reconciliation";
+import { suggestPurchases } from "@/server/modules/purchases/service";
 import { getTransactionDetail } from "@/server/modules/bank/transactions";
 import { requiresReceipt } from "@/lib/bank";
 import { todayInParis } from "@/lib/dates";
@@ -17,6 +18,7 @@ import { Amount, TransactionStatusBadge } from "@/components/app/bank/shared";
 import { DeleteTransactionButton, DuplicateActions, ReconcilePanel, TransactionForm } from "@/components/app/bank/transaction-detail";
 import { HistoryList } from "@/components/app/billing/shared";
 import { AttachedDocuments } from "@/components/app/documents/documents-view";
+import { PurchaseLinkPanel } from "@/components/app/purchases/purchase-link-panel";
 
 export const metadata: Metadata = { title: "Opération bancaire" };
 export const instant = false;
@@ -34,10 +36,12 @@ export default async function TransactionPage({ params }: Props) {
   const companyId = access.company.id;
   const canWrite = access.permissions.has("bank:write");
   const inflow = !transaction.amount.startsWith("-");
-  const [categories, suggestions, documentsAvailable] = await Promise.all([
+  const canSeePurchases = access.permissions.has("purchases:read");
+  const [categories, suggestions, documentsAvailable, purchaseSuggestions] = await Promise.all([
     listCategories(companyId),
     inflow ? suggestReconciliation(access, transaction) : null,
     companyHasModule(companyId, "documents"),
+    !inflow && canSeePurchases && !transaction.purchase ? suggestPurchases(access, transaction) : [],
   ]);
   const canReadDocuments = documentsAvailable && access.permissions.has("documents:read");
   const history = [
@@ -94,6 +98,18 @@ export default async function TransactionPage({ params }: Props) {
               <TransactionForm key={`${transaction.id}:${history.length}`} companyId={companyId} transaction={transaction} categories={categories} canWrite={canWrite} today={todayInParis()} />
             </CardContent>
           </Card>
+
+          {!inflow && canSeePurchases ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Facture d'achat</CardTitle>
+                <CardDescription>Rattachez ce décaissement à la facture du fournisseur qu'il règle : elle passe en « payée » et sa TVA devient déductible si c'est un service.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PurchaseLinkPanel companyId={companyId} transactionId={transaction.id} linked={transaction.purchase} suggestions={purchaseSuggestions} canWrite={canWrite && access.permissions.has("purchases:write")} currency={transaction.currency} />
+              </CardContent>
+            </Card>
+          ) : null}
 
           {inflow && suggestions ? (
             <Card>
