@@ -235,7 +235,7 @@ export function serializeItem(item: ItemRow): ItemView {
 export type HistoryEntry = { id: string; action: string; at: string; actor: string | null; detail: string | null };
 
 /** Historique d'un document, tiré du journal d'audit de l'entreprise. */
-export async function documentHistory(companyId: string, entityType: "Invoice" | "Quote" | "BankTransaction" | "Document", entityId: string): Promise<HistoryEntry[]> {
+export async function documentHistory(companyId: string, entityType: "Invoice" | "Quote" | "BankTransaction" | "Document" | "Purchase" | "FixedAsset" | "VatPeriod", entityId: string): Promise<HistoryEntry[]> {
   const logs = await prisma.auditLog.findMany({
     where: { companyId, entityType, entityId },
     orderBy: { createdAt: "asc" },

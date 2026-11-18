@@ -12,6 +12,7 @@ import type { ReconcileInput } from "@/lib/schemas/bank";
 import { normalizeLabel } from "./labels";
 import { refreshTransactionState } from "./status";
 import { getTransaction, type TransactionView } from "./transactions";
+import { syncAccountingFor, type SourceRefInput } from "@/server/modules/accounting/sync";
 
 /**
  * Rapprochement bancaire : un encaissement est affecté à une ou plusieurs
@@ -113,6 +114,7 @@ export async function reconcileTransaction(access: CompanyAccess, userId: string
   const invoiceIds = input.allocations.flatMap((a) => ("invoiceId" in a ? [a.invoiceId] : []));
   if (new Set(invoiceIds).size !== invoiceIds.length) throw errors.validation([{ path: "allocations", message: "Une même facture est sélectionnée deux fois" }]);
 
+  const touched: SourceRefInput[] = [{ type: "BANK_TRANSACTION", id: transactionId }];
   await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -137,6 +139,7 @@ export async function reconcileTransaction(access: CompanyAccess, userId: string
             if (!payment) throw errors.validation([{ path: "allocations", message: "Ce règlement est introuvable ou déjà rapproché" }]);
             take(dec(payment.amount));
             await tx.payment.update({ where: { id: payment.id }, data: { bankTransactionId: transactionId } });
+            touched.push({ type: "PAYMENT", id: payment.id });
             done.push(`règlement de ${euros(payment.amount)} déjà enregistré sur la facture ${payment.invoice.number ?? ""}`);
             continue;
           }
@@ -151,9 +154,10 @@ export async function reconcileTransaction(access: CompanyAccess, userId: string
           const remaining = remainingAmount(invoice);
           if (amount.greaterThan(remaining)) throw errors.validation([{ path: "allocations", message: `Le montant dépasse le reste à encaisser de la facture ${invoice.number ?? ""} (${euros(remaining)})` }]);
           take(amount);
-          await tx.payment.create({
+          const created = await tx.payment.create({
             data: { companyId, invoiceId: invoice.id, amount: amount.toFixed(2), paidAt: transaction.date, method: "TRANSFER", reference: transaction.label.slice(0, 191), bankTransactionId: transactionId, createdFromBank: true, createdById: userId },
           });
+          touched.push({ type: "PAYMENT", id: created.id });
           const amountPaid = dec(invoice.amountPaid).plus(amount);
           const status = settledStatus({ ...invoice, amountPaid });
           await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid: amountPaid.toFixed(2), status, paidAt: status === "PAID" ? transaction.date : null } });
@@ -175,12 +179,14 @@ export async function reconcileTransaction(access: CompanyAccess, userId: string
       { timeout: 20_000 },
     ),
   );
+  await syncAccountingFor(access.company, touched);
   return getTransaction(access, transactionId);
 }
 
 /** Annule le rapprochement d'une opération avec ses factures. */
 export async function unreconcileTransaction(access: CompanyAccess, userId: string, transactionId: string, meta: Meta = {}): Promise<TransactionView> {
   const companyId = access.company.id;
+  const touched: SourceRefInput[] = [{ type: "BANK_TRANSACTION", id: transactionId }];
   await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -189,6 +195,7 @@ export async function unreconcileTransaction(access: CompanyAccess, userId: stri
         const payments = await tx.payment.findMany({ where: { companyId, bankTransactionId: transactionId }, orderBy: { invoiceId: "asc" } });
         if (payments.length === 0) throw errors.badRequest("NOT_RECONCILED", "Cette opération n'est rapprochée d'aucune facture.");
         for (const payment of payments) {
+          touched.push({ type: "PAYMENT", id: payment.id });
           if (!payment.createdFromBank) {
             // Règlement saisi à la main avant le rapprochement : il reste sur la facture.
             await tx.payment.update({ where: { id: payment.id }, data: { bankTransactionId: null } });
@@ -211,5 +218,6 @@ export async function unreconcileTransaction(access: CompanyAccess, userId: stri
       { timeout: 20_000 },
     ),
   );
+  await syncAccountingFor(access.company, touched);
   return getTransaction(access, transactionId);
 }

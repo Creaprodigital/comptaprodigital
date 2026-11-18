@@ -3,6 +3,7 @@ import { errors } from "@/server/http/errors";
 import { recordAudit } from "@/server/audit/audit";
 import type { CompanyAccess } from "@/server/rbac/service";
 import { encryptSecret } from "@/server/security/crypto";
+import { syncAccountingFor } from "@/server/modules/accounting/sync";
 import type { Meta } from "@/server/modules/invoicing/shared";
 import { dec, toMoneyString } from "@/lib/money";
 import { fromIsoDate, toIsoDate } from "@/lib/dates";
@@ -89,6 +90,7 @@ export async function createBankAccount(access: CompanyAccess, userId: string, i
     },
   });
   await recordAudit({ action: "bank.account.create", userId, companyId: access.company.id, entityType: "BankAccount", entityId: account.id, metadata: { name: account.name }, ...meta });
+  await syncAccountingFor(access.company, [{ type: "OPENING", id: account.id }]);
   return toView(access, account);
 }
 
@@ -100,6 +102,9 @@ export async function updateBankAccount(access: CompanyAccess, userId: string, a
     data: { ...toData(input), ...(input.iban ? { ibanEncrypted: encryptSecret(input.iban), ibanLast4: input.iban.slice(-4) } : {}) },
   });
   await recordAudit({ action: "bank.account.update", userId, companyId: access.company.id, entityType: "BankAccount", entityId: accountId, metadata: { ibanChanged: Boolean(input.iban) }, ...meta });
+  // Le solde d'ouverture et sa date déterminent l'écriture d'ouverture et les opérations comptabilisées.
+  const transactions = await access.db.bankTransaction.findMany({ where: { bankAccountId: accountId }, select: { id: true } });
+  await syncAccountingFor(access.company, [{ type: "OPENING", id: accountId }, ...transactions.map((t) => ({ type: "BANK_TRANSACTION" as const, id: t.id }))]);
   return toView(access, account);
 }
 
@@ -117,4 +122,5 @@ export async function deleteBankAccount(access: CompanyAccess, userId: string, a
   if (count > 0) throw errors.conflict("ACCOUNT_HAS_TRANSACTIONS", "Ce compte porte des opérations : archivez-le plutôt que de le supprimer.");
   await access.db.bankAccount.delete({ where: { id: accountId } });
   await recordAudit({ action: "bank.account.delete", userId, companyId: access.company.id, entityType: "BankAccount", entityId: accountId, metadata: { name: account.name }, ...meta });
+  await syncAccountingFor(access.company, [{ type: "OPENING", id: accountId }]);
 }

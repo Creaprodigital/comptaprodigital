@@ -13,6 +13,7 @@ import { sum, toMoneyString } from "@/lib/money";
 import { formatIsoForHumans, fromIsoDate, toIsoDate, todayInParis } from "@/lib/dates";
 import type { ManualTransactionInput, TransactionsQuery, TransactionUpdateInput } from "@/lib/schemas/bank";
 import { getBankAccount } from "./accounts";
+import { syncAccountingFor } from "@/server/modules/accounting/sync";
 import { loadActiveRules, resolveCategory } from "./categories";
 import { fingerprintTransactions, ruleMatches, vatIncluded } from "./labels";
 import { parseAmount } from "./parsers/types";
@@ -24,6 +25,7 @@ const listInclude = {
   category: { select: { id: true, name: true, kind: true, color: true } },
   bankAccount: { select: { id: true, name: true } },
   payments: { select: { amount: true } },
+  purchase: { select: { id: true, label: true, reference: true, supplier: { select: { name: true } } } },
 } satisfies Prisma.BankTransactionInclude;
 
 type TransactionRow = Prisma.BankTransactionGetPayload<{ include: typeof listInclude }>;
@@ -45,6 +47,8 @@ export type TransactionView = {
   /** Montant déjà affecté à des factures (encaissements). */
   allocated: string;
   isDuplicateSuspect: boolean;
+  /** Facture d'achat réglée par ce décaissement. */
+  purchase: { id: string; label: string; reference: string | null; supplierName: string | null } | null;
   /** Saisie à la main : date et montant restent modifiables. */
   manual: boolean;
   notes: string | null;
@@ -71,6 +75,7 @@ export function serializeTransaction(row: TransactionRow): TransactionView {
     documentCount: row.documentCount,
     allocated: toMoneyString(sum(row.payments.map((p) => p.amount))),
     isDuplicateSuspect: row.isDuplicateSuspect,
+    purchase: row.purchase ? { id: row.purchase.id, label: row.purchase.label, reference: row.purchase.reference, supplierName: row.purchase.supplier?.name ?? null } : null,
     manual: row.importId === null && row.externalId === null,
     notes: row.notes,
   };
@@ -205,6 +210,7 @@ export async function createManualTransaction(access: CompanyAccess, userId: str
     });
     await recordAudit({ action: "bank.transaction.create", userId, companyId, entityType: "BankTransaction", entityId: id, metadata: { detail: "Opération saisie manuellement" }, ...meta }, tx);
   });
+  await syncAccountingFor(access.company, [{ type: "BANK_TRANSACTION", id }]);
   return getTransaction(access, id);
 }
 
@@ -274,6 +280,7 @@ export async function updateTransaction(access: CompanyAccess, userId: string, t
     await refreshTransactionState(tx, companyId, transactionId);
     await recordAudit({ action: "bank.transaction.update", userId, companyId, entityType: "BankTransaction", entityId: transactionId, metadata: { detail: changes.join(" · ") }, ...meta }, tx);
   });
+  await syncAccountingFor(access.company, [{ type: "BANK_TRANSACTION", id: transactionId }]);
   return getTransaction(access, transactionId);
 }
 
@@ -309,6 +316,7 @@ export async function bulkCategorize(access: CompanyAccess, userId: string, inpu
     },
     { timeout: 30_000 },
   );
+  await syncAccountingFor(access.company, rows.map((row) => ({ type: "BANK_TRANSACTION" as const, id: row.id })));
   return { updated: rows.length };
 }
 
@@ -346,6 +354,7 @@ export async function deleteTransaction(access: CompanyAccess, userId: string, t
       tx,
     );
   });
+  await syncAccountingFor(access.company, [{ type: "BANK_TRANSACTION", id: transactionId }]);
 }
 
 // --- Règles automatiques ----------------------------------------------------------------
@@ -394,6 +403,7 @@ export async function applyRulesToUncategorized(access: CompanyAccess, userId: s
       { timeout: 30_000 },
     );
   }
+  await syncAccountingFor(access.company, matches.map(({ row }) => ({ type: "BANK_TRANSACTION" as const, id: row.id })));
   return { examined: rows.length, categorized: matches.length };
 }
 

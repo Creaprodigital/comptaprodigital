@@ -13,6 +13,7 @@ import { loadActiveRules } from "./categories";
 import { fingerprintTransactions, vatIncluded } from "./labels";
 import { analyzeStatement, StatementParseError, type CsvMapping, type ParsedTransaction, type ParseIssue, type StatementFormat, type StatementPreview } from "./parsers";
 import { matchRule, newTransactionId } from "./transactions";
+import { syncAccountingFor } from "@/server/modules/accounting/sync";
 
 /**
  * Import de relevés bancaires (CSV, OFX, camt.053), en deux temps : un aperçu
@@ -143,7 +144,8 @@ export async function commitImport(access: CompanyAccess, userId: string, input:
   const rules = await loadActiveRules(access);
   const categories = new Map((await prisma.transactionCategory.findMany({ where: { id: { in: rules.map((r) => r.categoryId) } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]));
 
-  return withTransactionRetry(() =>
+  let createdIds: string[] = [];
+  const outcome = await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
         // Verrou sur le compte : deux imports simultanés du même relevé ne créent pas de doublons.
@@ -192,6 +194,7 @@ export async function commitImport(access: CompanyAccess, userId: string, input:
           };
         });
         for (let start = 0; start < data.length; start += 500) await tx.bankTransaction.createMany({ data: data.slice(start, start + 500) });
+        createdIds = data.map((d) => d.id);
         for (let start = 0; start < audits.length; start += 500) await tx.auditLog.createMany({ data: audits.slice(start, start + 500) });
         await recordAudit(
           { action: "bank.import", userId, companyId, entityType: "BankImport", entityId: bankImport.id, metadata: { fileName: bankImport.fileName, format: preview.format, imported: fresh.length, duplicates: result.duplicateCount, suspects: result.suspectCount }, ...meta },
@@ -202,6 +205,8 @@ export async function commitImport(access: CompanyAccess, userId: string, input:
       { timeout: 60_000, maxWait: 10_000 },
     ),
   );
+  await syncAccountingFor(access.company, createdIds.map((id) => ({ type: "BANK_TRANSACTION" as const, id })));
+  return outcome;
 }
 
 export type ImportView = { id: string; accountId: string; accountName: string; format: StatementFormat; fileName: string; rowCount: number; importedCount: number; duplicateCount: number; remainingCount: number; createdAt: string; createdBy: string | null };
@@ -230,7 +235,7 @@ export async function deleteImport(access: CompanyAccess, userId: string, import
   const companyId = access.company.id;
   const bankImport = await access.db.bankImport.findFirst({ where: { id: importId } });
   if (!bankImport) throw errors.notFound("Import introuvable.");
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const transactions = await tx.bankTransaction.findMany({ where: { companyId, importId }, select: { id: true, _count: { select: { payments: true } } } });
     if (transactions.some((t) => t._count.payments > 0)) {
       throw errors.conflict("IMPORT_RECONCILED", "Des opérations de cet import sont rapprochées de factures : annulez d'abord ces rapprochements.");
@@ -240,6 +245,8 @@ export async function deleteImport(access: CompanyAccess, userId: string, import
     await tx.bankTransaction.deleteMany({ where: { companyId, importId } });
     await tx.bankImport.deleteMany({ where: { id: importId, companyId } });
     await recordAudit({ action: "bank.import.delete", userId, companyId, entityType: "BankImport", entityId: importId, metadata: { fileName: bankImport.fileName, deleted: ids.length }, ...meta }, tx);
-    return { deleted: ids.length };
+    return { deleted: ids.length, ids };
   });
+  await syncAccountingFor(access.company, result.ids.map((id) => ({ type: "BANK_TRANSACTION" as const, id })));
+  return { deleted: result.deleted };
 }

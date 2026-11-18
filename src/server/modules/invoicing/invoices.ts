@@ -9,6 +9,7 @@ import { addDays, formatIsoForHumans, fromIsoDate, toIsoDate, todayInParis } fro
 import { dec, toMoneyString, ZERO } from "@/lib/money";
 import { INVOICE_STATUS_LABELS, INVOICE_TYPE_LABELS, computeDocumentTotals, formatDocumentNumber, remainingAmount } from "@/lib/invoicing";
 import type { DocumentLineInput, InvoiceInput, PaymentInput } from "@/lib/schemas/invoicing";
+import { syncAccountingFor } from "@/server/modules/accounting/sync";
 import {
   buildPartiesSnapshot,
   documentHistory,
@@ -445,6 +446,7 @@ export async function issueInvoice(access: CompanyAccess, userId: string | null,
   // Import différé : le module d'archivage dépend du modèle d'impression, qui dépend de celui-ci.
   const { archiveIssuedInvoice } = await import("./archive");
   await archiveIssuedInvoice(access, issued);
+  await syncAccountingFor(access.company, [{ type: "INVOICE", id: issued.id }]);
   return issued;
 }
 
@@ -521,6 +523,7 @@ export async function recordPayment(access: CompanyAccess, userId: string, invoi
   const companyId = access.company.id;
   if (input.paidAt > todayInParis()) throw errors.validation([{ path: "paidAt", message: "La date de règlement ne peut pas être dans le futur" }]);
 
+  let createdPaymentId: string | null = null;
   const updated = await withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       // Verrou sur la facture : deux règlements simultanés ne peuvent pas dépasser le reste dû.
@@ -538,9 +541,10 @@ export async function recordPayment(access: CompanyAccess, userId: string, invoi
       if (amount.greaterThan(remaining)) {
         throw errors.validation([{ path: "amount", message: `Le montant dépasse le reste à encaisser (${remaining.toFixed(2).replace(".", ",")} €)` }]);
       }
-      await tx.payment.create({
+      const payment = await tx.payment.create({
         data: { companyId, invoiceId, amount: amount.toFixed(2), paidAt: fromIsoDate(input.paidAt), method: input.method, reference: input.reference ?? null, note: input.note ?? null, createdById: userId },
       });
+      createdPaymentId = payment.id;
       const amountPaid = dec(invoice.amountPaid).plus(amount);
       const status = settledStatus({ ...invoice, amountPaid });
       await tx.invoice.update({
@@ -562,12 +566,13 @@ export async function recordPayment(access: CompanyAccess, userId: string, invoi
       return tx.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: detailInclude });
     }),
   );
+  if (createdPaymentId) await syncAccountingFor(access.company, [{ type: "PAYMENT", id: createdPaymentId }]);
   return updated;
 }
 
 export async function deletePayment(access: CompanyAccess, userId: string, invoiceId: string, paymentId: string, meta: Meta = {}): Promise<InvoiceWithDetail> {
   const companyId = access.company.id;
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM invoices WHERE id = ${invoiceId} AND companyId = ${companyId} FOR UPDATE`;
     if (locked.length === 0) throw errors.notFound("Facture introuvable.");
     const payment = await tx.payment.findFirst({ where: { id: paymentId, invoiceId, companyId } });
@@ -594,6 +599,8 @@ export async function deletePayment(access: CompanyAccess, userId: string, invoi
     );
     return tx.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: detailInclude });
   });
+  await syncAccountingFor(access.company, [{ type: "PAYMENT", id: paymentId }]);
+  return result;
 }
 
 /** Marque la facture comme envoyée (premier envoi) sans modifier son contenu. */

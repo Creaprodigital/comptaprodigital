@@ -51,8 +51,8 @@ export const STATEMENT_FORMAT_LABELS = { CSV: "CSV", OFX: "OFX", CAMT053: "camt.
 export const BANK_VAT_RATES = ["20", "10", "5.5", "2.1", "0"] as const;
 
 /** Un décaissement appelle un justificatif tant qu'il n'est pas classé hors charges (impôt, virement interne…). */
-export function requiresReceipt(transaction: { amount: string; documentCount: number; category: { kind: string } | null }): boolean {
-  if (!transaction.amount.startsWith("-") || transaction.documentCount > 0) return false;
+export function requiresReceipt(transaction: { amount: string; documentCount: number; category: { kind: string } | null; purchase?: { id: string } | null }): boolean {
+  if (!transaction.amount.startsWith("-") || transaction.documentCount > 0 || transaction.purchase) return false;
   return transaction.category === null || transaction.category.kind === "EXPENSE" || transaction.category.kind === "PAYROLL";
 }
 

@@ -914,6 +914,11 @@ model Purchase {
   amountPaid   Decimal        @default(0) @db.Decimal(15, 2)
   paidAt       DateTime?      @db.Date
   currency     String         @default("EUR") @db.Char(3)
+  /// Nature de l'achat : détermine le fait générateur de la TVA déductible.
+  operationCategory OperationCategory @default(SERVICES)
+  /// Le fournisseur a opté pour la TVA d'après les débits (TVA déductible dès la facture pour un service).
+  supplierVatOnDebits Boolean @default(false)
+  notes        String?        @db.Text
   createdById  String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -927,6 +932,7 @@ model Purchase {
   @@index([companyId, status])
   @@index([supplierId])
   @@index([categoryId])
+  @@index([companyId, reference])
   @@map("purchases")
 }
 
@@ -1216,6 +1222,10 @@ enum EntrySource {
   DEPRECIATION
   CLOSING
   OPENING
+  /// Liquidation d'une déclaration de TVA validée
+  VAT_RETURN
+  /// Sortie d'une immobilisation (cession, mise au rebut)
+  ASSET_DISPOSAL
 }
 
 model AccountingEntry {
@@ -1248,6 +1258,7 @@ model AccountingEntry {
   lines      AccountingEntryLine[]
 
   @@unique([fiscalYearId, entryNumber])
+  @@index([companyId, status, date])
   @@index([companyId, date])
   @@index([journalId, date])
   @@index([companyId, sourceType, sourceId])
@@ -1279,6 +1290,7 @@ model AccountingEntryLine {
   @@index([entryId])
   @@index([companyId, accountId])
   @@index([accountId])
+  @@index([companyId, accountId, letter])
   @@map("accounting_entry_lines")
 }
 
@@ -1308,6 +1320,10 @@ model FixedAsset {
   expenseAccountNumber      String             @db.VarChar(20)
   status                    FixedAssetStatus   @default(ACTIVE)
   disposedAt                DateTime?          @db.Date
+  /// Prix de cession (0 pour une mise au rebut).
+  disposalPrice             Decimal?           @db.Decimal(15, 2)
+  notes                     String?            @db.Text
+  createdById               String?
   createdAt                 DateTime           @default(now())
   updatedAt                 DateTime           @updatedAt
 
