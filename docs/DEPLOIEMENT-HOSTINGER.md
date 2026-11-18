@@ -163,6 +163,9 @@ sur le VPS ne protège pas d'une perte du VPS. La procédure de restauration, à
 
 ## 6. Tâches quotidiennes
 
+Elles émettent les factures récurrentes, envoient les relances, vérifient que les écritures comptables
+automatiques sont à jour (sans jamais modifier une écriture validée) et purgent les données expirées.
+
 Les factures récurrentes et les relances automatiques sont produites par une tâche à lancer une fois par jour
 (`crontab -e`, ici à 6 h 15) :
 

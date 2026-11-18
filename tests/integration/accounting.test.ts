@@ -388,3 +388,28 @@ describe("verrouillage, clôture et FEC", () => {
     expect(corrections).toEqual([`${previousYear + 1}-01-01`, `${previousYear + 1}-01-01`]);
   });
 });
+
+describe("initialisation", () => {
+  it("initialise une seule fois sous accès concurrents et reprend l'historique", async () => {
+    const owner = await createVerifiedUser({ email: "concurrence@exemple.test", plan: "PRO" });
+    const company = await createTestCompany(owner.id, "Atelier Concurrent");
+    const concurrent = await authorizeCompany(owner.id, company.id, "accounting:read");
+    // Une facture émise avant toute utilisation de la comptabilité (comptabilisation désactivée le temps de l'émettre).
+    await prisma.company.update({ where: { id: company.id }, data: { accountingMode: "CASH_BOOK" } });
+    const cashAccess = await authorizeCompany(owner.id, company.id, "invoices:issue");
+    const customer = await createCustomer(cashAccess, owner.id, customerSchema.parse({ name: "Client historique" }));
+    const draft = await createInvoiceDraft(cashAccess, owner.id, invoiceSchema.parse({ customerId: customer.id, issueDate: d(2), items: [{ description: "Ligne", quantity: "1", unitPriceExclTax: "100", discountRate: "0", vatRate: "20" }] }));
+    await issueInvoice(cashAccess, owner.id, draft.id);
+    await prisma.company.update({ where: { id: company.id }, data: { accountingMode: "DOUBLE_ENTRY" } });
+    const ready = await authorizeCompany(owner.id, company.id, "accounting:read");
+    expect(await prisma.accountingAccount.count({ where: { companyId: company.id } })).toBe(0);
+
+    // Consultations simultanées : aucune erreur, une seule initialisation.
+    const { listAccounts, listJournals, accountingOverview } = await import("@/server/modules/accounting/chart");
+    await Promise.all([listAccounts(ready), listJournals(ready), accountingOverview(ready), listJournals(concurrent)]);
+    const journals = await prisma.accountingJournal.findMany({ where: { companyId: company.id } });
+    expect(journals.map((j) => j.code).sort()).toEqual(["AC", "AN", "CA", "OD", "VT"]);
+    // L'historique a été repris dès la première consultation.
+    expect(await prisma.accountingEntry.count({ where: { companyId: company.id, sourceType: "INVOICE", sourceId: draft.id } })).toBe(1);
+  });
+});

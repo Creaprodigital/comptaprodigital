@@ -16,7 +16,7 @@ comptabilité, TVA, documents, abonnements et administration.
 | 2 | Site vitrine, inscription, tableau de bord | ✅ Livrée |
 | 3 | Clients, produits, devis, factures | ✅ Livrée |
 | 4 | Banque, transactions, justificatifs | ✅ Livrée |
-| 5 | Moteur comptable, journaux, TVA, exports | ⏳ À venir (schéma en place) |
+| 5 | Moteur comptable, journaux, TVA, exports | ✅ Livrée |
 | 6 | Stripe et super administration | ⏳ À venir (schéma en place) |
 | 7 | Automatisations, IA, intégrations | ⏳ À venir |
 | 8 | Durcissement sécurité, optimisation, déploiement | 🔶 Socle en place (Docker, CI, sauvegardes) |
@@ -38,6 +38,21 @@ Ce qui fonctionne réellement aujourd'hui :
 - **Documents** (formules Pro et Business) — ajout de PDF, JPEG et PNG, chiffrés avant stockage (disque local ou
   S3), classement, recherche, association aux opérations, factures et devis, aperçu, téléchargement, historique,
   export ZIP, archivage de l'original de chaque facture émise. La lecture automatique (OCR) n'est pas livrée.
+- **Achats** — fournisseurs, factures d'achat (biens ou services, option du fournisseur pour les débits),
+  justificatifs, règlement par rapprochement d'un décaissement bancaire, export CSV.
+- **Comptabilité** (formules Pro et Business, entreprises au réel) — plan comptable de référence configurable,
+  journaux (ventes, achats, banques, caisse, opérations diverses, à-nouveaux), écritures générées automatiquement
+  à partir des factures, règlements, achats et opérations bancaires, proposées au brouillard puis validées avec une
+  numérotation continue ; saisie manuelle contrôlée ; aucune modification d'une écriture validée (contre-passation
+  tracée) ; grand livre, balance, journaux, comptes clients et fournisseurs avec lettrage, rapprochement bancaire,
+  immobilisations (plans linéaire et dégressif, dotations, cession), verrouillage des périodes, clôture avec
+  à-nouveaux, export FEC et exports CSV.
+- **Micro-entreprises** — livre des recettes et registre des achats, exportables.
+- **TVA** (formules Pro et Business) — TVA collectée et déductible calculée selon l'exigibilité de chaque opération,
+  périodes selon le régime (CA3 mensuelle ou trimestrielle, CA12), préparation de la déclaration avec les repères de
+  la CA3, validation, indication du dépôt, crédit reporté, écriture de liquidation, contrôle de concordance avec la
+  comptabilité, simulation et acomptes, export. **Aucune télétransmission** : la déclaration se dépose sur l'espace
+  professionnel. Les opérations intracommunautaires, l'autoliquidation et le prorata de déduction ne sont pas gérés.
 
 ## Pile technique
 

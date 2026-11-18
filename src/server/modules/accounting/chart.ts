@@ -7,14 +7,14 @@ import type { Meta } from "@/server/modules/invoicing/shared";
 import { accountTypeFor } from "@/config/chart-of-accounts";
 import { dec, toMoneyString } from "@/lib/money";
 import { fromIsoDate, toIsoDate, todayInParis } from "@/lib/dates";
-import { ensureAccountingSetup } from "./setup";
+import { ensureAccountingReady } from "./sync";
 
 /** Plan comptable et journaux de l'entreprise. */
 
 export type AccountView = { id: string; number: string; label: string; type: string; isSystem: boolean; isActive: boolean; balance: string; lineCount: number };
 
 export async function listAccounts(access: CompanyAccess, options: { q?: string; used?: boolean } = {}): Promise<AccountView[]> {
-  await prisma.$transaction((tx) => ensureAccountingSetup(tx, access.company.id));
+  await ensureAccountingReady(access.company);
   const where: Prisma.AccountingAccountWhereInput = options.q ? { OR: [{ number: { startsWith: options.q } }, { label: { contains: options.q } }] } : {};
   const [accounts, totals] = await Promise.all([
     access.db.accountingAccount.findMany({ where, orderBy: { number: "asc" } }),
@@ -31,7 +31,7 @@ export async function listAccounts(access: CompanyAccess, options: { q?: string;
 
 export async function createAccount(access: CompanyAccess, userId: string, input: { number: string; label: string }, meta: Meta = {}): Promise<AccountView> {
   const companyId = access.company.id;
-  await prisma.$transaction((tx) => ensureAccountingSetup(tx, companyId));
+  await ensureAccountingReady(access.company);
   if (await access.db.accountingAccount.findFirst({ where: { number: input.number } })) throw errors.validation([{ path: "number", message: "Ce numéro de compte existe déjà" }]);
   const account = await access.db.accountingAccount.create({ data: { companyId, number: input.number, label: input.label, type: accountTypeFor(input.number) } });
   await recordAudit({ action: "accounting.account.create", userId, companyId, entityType: "AccountingAccount", entityId: account.id, metadata: { number: input.number, label: input.label }, ...meta });
@@ -48,7 +48,7 @@ export async function updateAccount(access: CompanyAccess, userId: string, accou
 }
 
 export async function listJournals(access: CompanyAccess) {
-  await prisma.$transaction((tx) => ensureAccountingSetup(tx, access.company.id));
+  await ensureAccountingReady(access.company);
   const [journals, counts] = await Promise.all([
     access.db.accountingJournal.findMany({ orderBy: { code: "asc" } }),
     access.db.accountingEntry.groupBy({ by: ["journalId", "status"], _count: { _all: true } }),
@@ -67,7 +67,7 @@ export async function listJournals(access: CompanyAccess) {
 /** Vue d'ensemble : brouillard, exercice en cours, comptes à surveiller. */
 export async function accountingOverview(access: CompanyAccess) {
   const today = todayInParis();
-  await prisma.$transaction((tx) => ensureAccountingSetup(tx, access.company.id));
+  await ensureAccountingReady(access.company);
   const year = await access.db.fiscalYear.findFirst({ where: { startDate: { lte: fromIsoDate(today) }, endDate: { gte: fromIsoDate(today) } } });
   const [drafts, oldestDraft, suspense, openYears, errorsCount] = await Promise.all([
     access.db.accountingEntry.count({ where: { status: "DRAFT" } }),

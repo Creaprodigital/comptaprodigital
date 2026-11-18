@@ -5,6 +5,8 @@ import { toIsoDate } from "@/lib/dates";
 import { insertEntry, lockCompany, type LineInput } from "./entries";
 import { postingDate } from "./fiscal-years";
 import { expectedEntryFor, type ExpectedEntry, type SourceRef } from "./postings";
+import { REFERENCE_JOURNALS } from "@/config/chart-of-accounts";
+import { withTransactionRetry } from "@/server/modules/invoicing/shared";
 import { ensureAccountingSetup, isAccountingEnabled, type Tx } from "./setup";
 
 /**
@@ -111,13 +113,16 @@ export async function syncAccountingFor(company: CompanyRef, refs: SourceRef[]):
     let fresh = false;
     for (let start = 0; start < refs.length; start += 100) {
       const chunk = refs.slice(start, start + 100);
-      await prisma.$transaction(
-        async (tx) => {
-          await lockCompany(tx, company.id);
-          if (start === 0) fresh = await ensureAccountingSetup(tx, company.id);
-          for (const ref of chunk) await syncSource(tx, company, ref);
-        },
-        { timeout: 120_000, maxWait: 20_000 },
+      // Un interblocage avec une autre opération sur les mêmes lignes est rejoué.
+      await withTransactionRetry(() =>
+        prisma.$transaction(
+          async (tx) => {
+            await lockCompany(tx, company.id);
+            if (start === 0) fresh = await ensureAccountingSetup(tx, company.id);
+            for (const ref of chunk) await syncSource(tx, company, ref);
+          },
+          { timeout: 120_000, maxWait: 20_000 },
+        ),
       );
     }
     // Première utilisation de la comptabilité : reprise de tout l'historique.
@@ -171,14 +176,44 @@ export async function resyncAll(company: CompanyRef): Promise<{ examined: number
   let changed = 0;
   for (let start = 0; start < refs.length; start += 100) {
     const chunk = refs.slice(start, start + 100);
-    await prisma.$transaction(
-      async (tx) => {
-        await lockCompany(tx, company.id);
-        if (start === 0) await ensureAccountingSetup(tx, company.id);
-        for (const ref of chunk) if ((await syncSource(tx, company, ref)) !== "unchanged") changed++;
-      },
-      { timeout: 180_000, maxWait: 20_000 },
+    changed += await withTransactionRetry(() =>
+      prisma.$transaction(
+        async (tx) => {
+          await lockCompany(tx, company.id);
+          if (start === 0) await ensureAccountingSetup(tx, company.id);
+          let count = 0;
+          for (const ref of chunk) if ((await syncSource(tx, company, ref)) !== "unchanged") count++;
+          return count;
+        },
+        { timeout: 180_000, maxWait: 20_000 },
+      ),
     );
   }
   return { examined: refs.length, changed };
+}
+
+/**
+ * Comptabilité prête à être consultée ou saisie : plan comptable et journaux en
+ * place. La vérification est une simple lecture ; l'initialisation, rare, se fait
+ * sous le verrou de l'entreprise (pas de créations concurrentes) et reprend alors
+ * tout l'historique des pièces.
+ */
+export async function ensureAccountingReady(company: CompanyRef): Promise<void> {
+  const [accounts, journals, bankAccounts, bankJournals] = await Promise.all([
+    prisma.accountingAccount.count({ where: { companyId: company.id } }),
+    prisma.accountingJournal.count({ where: { companyId: company.id, bankAccountId: null } }),
+    prisma.bankAccount.count({ where: { companyId: company.id } }),
+    prisma.accountingJournal.count({ where: { companyId: company.id, bankAccountId: { not: null } } }),
+  ]);
+  if (accounts > 0 && journals >= REFERENCE_JOURNALS.length && bankJournals >= bankAccounts) return;
+  const fresh = await withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        await lockCompany(tx, company.id);
+        return ensureAccountingSetup(tx, company.id);
+      },
+      { timeout: 30_000, maxWait: 20_000 },
+    ),
+  );
+  if (fresh) await resyncAll(company);
 }

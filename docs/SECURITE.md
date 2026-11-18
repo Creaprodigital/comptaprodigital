@@ -28,6 +28,9 @@
 | Exports CSV | Cellules commençant par `=`, `+`, `-`, `@` neutralisées (injection de formules) | intégration |
 | Données bancaires de l'entreprise | IBAN chiffré au repos, jamais renvoyé en entier au navigateur | intégration |
 | Banque | Aucun identifiant bancaire demandé ni stocké ; date et montant d'une opération importée non modifiables ; toute modification tracée | conception, `tests/integration/bank.test.ts` |
+| Écritures comptables | Validation numérotée en continu ; aucune écriture validée n'est modifiée ni supprimée (contre-passation) ; périodes verrouillées et exercices clôturés fermés à toute écriture ; journalisation | `tests/integration/accounting.test.ts`, e2e |
+| Déclarations de TVA | Préparation et validation par des droits distincts (`vat:write`, `vat:validate`) ; montants figés ; aucune transmission automatique | `tests/integration/vat.test.ts` |
+| Exports comptables | Droit `exports:run`, limitation de débit, FEC limité aux écritures validées, export journalisé | intégration, e2e |
 | Relevés importés | Taille bornée, analyse sans résolution d'entités XML externes, règles sans expressions régulières | `tests/unit/bank-parsers.test.ts` |
 | Documents | Type vérifié par signature (PDF, JPEG, PNG), 10 Mo maximum, chiffrement applicatif AES-256-GCM avant stockage, accès uniquement par l'API après contrôle des droits, téléchargements journalisés | intégration, e2e |
 | Aperçu des documents | Servi avec `nosniff` et une CSP `default-src 'none'`, affichable uniquement dans un cadre de la même origine | e2e |

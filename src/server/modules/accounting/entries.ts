@@ -8,7 +8,7 @@ import type { Meta } from "@/server/modules/invoicing/shared";
 import { checkEntryLines } from "@/lib/accounting";
 import { dec, toMoneyString, ZERO } from "@/lib/money";
 import { formatIsoForHumans, fromIsoDate, toIsoDate, todayInParis, type IsoDate } from "@/lib/dates";
-import { ensureAccount, ensureAccountingSetup, type Tx } from "./setup";
+import { ensureAccount, type Tx } from "./setup";
 import { fiscalYearFor, isOpenFor } from "./fiscal-years";
 
 /**
@@ -249,7 +249,6 @@ async function checkManualInput(tx: Tx, access: CompanyAccess, input: ManualEntr
 export async function createManualEntry(access: CompanyAccess, userId: string, input: ManualEntryInput, meta: Meta = {}): Promise<EntryView> {
   const companyId = access.company.id;
   const id = await prisma.$transaction(async (tx) => {
-    await ensureAccountingSetup(tx, companyId);
     const journal = await checkManualInput(tx, access, input);
     const entry = await insertEntry(tx, access.company, { ...input, journalCode: journal.code, pieceDate: input.date }, { createdById: userId });
     await recordAudit({ action: "accounting.entry.create", userId, companyId, entityType: "AccountingEntry", entityId: entry.id, metadata: { detail: `Écriture saisie au brouillard (${journal.code})` }, ...meta }, tx);

@@ -230,6 +230,64 @@ automatiques et les purges (sessions, compteurs de débit, fichiers des document
 - OCR : les colonnes sont prévues (`ocrStatus`, `ocrData`, `ocrVerifiedAt`, `suggestedCategory`) mais aucune
   extraction n'est faite à ce stade.
 
+## Achats
+
+`src/server/modules/purchases/service.ts`. Une facture d'achat porte ses montants HT et TVA, sa catégorie (compte de
+charge ou d'immobilisation) et sa nature (biens, services, mixte). Elle est réglée par une ou plusieurs opérations
+bancaires de décaissement qui lui sont rapprochées (`bank_transactions.purchaseId`) ; elle passe alors en « payée ».
+Une facture réglée ne se modifie plus ; une facture se corrige ou s'annule tant qu'aucun règlement n'est rapproché.
+
+## Comptabilité
+
+`src/server/modules/accounting/*`, pour les entreprises tenant une comptabilité d'engagement (`accountingMode`
+`DOUBLE_ENTRY`) dont la formule inclut le module `accounting`.
+
+- **Plan comptable et journaux** (`setup.ts`, `chart.ts`, `src/config/chart-of-accounts.ts`) — une sélection du PCG
+  est installée à la première utilisation, sous le verrou de l'entreprise ; un journal et un compte 512 par compte
+  bancaire. L'entreprise peut créer des sous-comptes, renommer ou désactiver un compte.
+- **Écritures** (`entries.ts`) — brouillard (modifiable) puis validation : contrôle de l'équilibre et de la période,
+  attribution du numéro suivant de la suite continue de l'exercice, dans l'ordre chronologique. Une écriture validée
+  est intangible : elle se corrige par contre-passation (écriture inverse liée, `reversalOfId`). Tout est journalisé.
+- **Comptabilisation automatique** (`rules.ts`, `postings.ts`, `sync.ts`) — chaque pièce produit l'écriture attendue
+  d'après son état actuel :
+
+  | Pièce | Écriture |
+  |---|---|
+  | Facture (VT) | 411 client / 706 ou 707 (4191 pour un acompte), 709 remise, TVA 44571 (débits) ou 44581 en attente (encaissements) |
+  | Avoir | sens inverse ; la TVA porte sur 44581 pour la part non encaissée, sur 44571 pour la part déjà encaissée |
+  | Règlement client | 512 (rapproché), 530 (espèces) ou 511 (valeurs à l'encaissement) / 411 ; transfert 44581 → 44571 au prorata |
+  | Facture d'achat (AC) | 6xx ou 2xx + 44566 / 44562 (biens, option débits) ou 44582 en attente (services) / 401 ou 404 |
+  | Opération bancaire | 512 / 401 si rapprochée d'un achat (+ transfert 44582 → 44566) ; sinon compte de la catégorie et TVA, 471 si non catégorisée |
+  | Solde d'ouverture | 512 / 471 (à reclasser par une écriture d'opérations diverses) |
+  | Dotations, sortie d'actif, déclaration de TVA | 681 / 28x ; 28x + 675 / 2x (+ 462 / 775) ; 44571 / 44566-44562-44567, 44551 ou 44567 |
+
+  Les écritures générées restent au brouillard. Si la pièce change, le brouillard est recalculé ; une écriture déjà
+  validée n'est jamais modifiée : une contre-passation puis la nouvelle écriture sont préparées. Une correction qui
+  tombe dans une période verrouillée est datée du premier jour ouvert (la date de la pièce est conservée).
+  La synchronisation est appelée après chaque opération métier ; elle ne fait jamais échouer cette opération (erreur
+  journalisée dans `application_errors`) et un recalcul complet est disponible (bouton et tâche quotidienne).
+- **États** (`reports.ts`) — balance, grand livre (solde progressif, report), journaux, balance auxiliaire, lettrage
+  manuel et automatique (facture ↔ règlements et avoirs, achat ↔ décaissements), état de rapprochement bancaire.
+- **Exercices** (`closing.ts`) — verrouillage d'une période (brouillard validé au préalable ; irréversible),
+  clôture après la fin de l'exercice : brouillard vide, dotations calculées, compte d'attente soldé ; report des
+  soldes des classes 1 à 5 par tiers et du résultat (120 ou 129) dans une écriture d'à-nouveaux validée.
+- **FEC** (`fec.ts`) — 18 zones, tabulation, ISO 8859-15, écritures validées dans l'ordre de validation, nom
+  `SIRENFECAAAAMMJJ.txt`, avec un contrôle de structure (`checkFec`) utilisé par les tests.
+- **Immobilisations** (`assets.ts`, `src/lib/depreciation.ts`) — linéaire au prorata temporis (30/360), dégressif
+  (coefficients 1,25 / 1,75 / 2,25, prorata mensuel, bascule en linéaire), dotations par exercice, sortie de l'actif.
+- **Micro-entreprises** (`cash-book.ts`) — livre des recettes (règlements et encaissements classés en produits) et
+  registre des achats.
+
+## TVA
+
+`src/server/modules/vat/*`. `compute.ts` calcule, opération par opération, la TVA collectée par taux et la TVA
+déductible (biens et services / immobilisations) avec les mêmes règles que la comptabilisation (`accounting/rules.ts`),
+ce que vérifie le contrôle de concordance avec les comptes 445710, 44566 et 44562. `service.ts` découpe les périodes
+selon le régime, prépare la déclaration (instantané des montants, repères CA3), la fait valider (droit `vat:validate`,
+écriture de liquidation au brouillard), enregistre le dépôt déclaré par l'utilisateur et reporte le crédit sur la
+période suivante. Une modification ultérieure des opérations est signalée sans toucher à la déclaration validée.
+Le tableau de bord utilise le même calcul. Rien n'est transmis à l'administration.
+
 ## Rendu et cache (Next.js 16)
 
 Le projet utilise **Cache Components** : rien n'est mis en cache sans directive explicite. Le site vitrine est
@@ -266,14 +324,19 @@ Implémentées dans `src/server/modules/dashboard/service.ts` et vérifiées au 
   textes des relances ;
 - banque : comptes comptables suggérés par catégorie, calcul de la TVA comprise dans une opération à partir d'un
   taux unique, liste des catégories dispensées de justificatif, durée de conservation des pièces ;
-- en phase 5 : plan comptable, FEC et clôture.
+- comptabilité : sélection et intitulés des comptes de référence, schémas de comptabilisation ci-dessus (en
+  particulier les subdivisions 445810 et 445820 de la TVA en attente, le classement direct en charge des salaires
+  payés, le traitement des acomptes en 4191), contrôles de clôture, contenu et format du FEC (à passer à l'outil
+  « Test Compta Demat » de la DGFiP), méthodes et durées d'amortissement ;
+- TVA : règles d'exigibilité retenues (achats « mixtes » traités comme des services, part des avoirs portant sur des
+  sommes encaissées), numéros de ligne de la CA3, base des acomptes du régime simplifié ; les opérations
+  intracommunautaires, l'autoliquidation, les régimes particuliers et le prorata de déduction ne sont pas gérés.
 
 ## Feuille de route
 
 Chaque phase suit le même déroulé : architecture, fichiers, implémentation réelle, migrations, tests, corrections,
 documentation des variables d'environnement, commit.
 
-- **Phase 5** — plan comptable, journaux, écritures, grand livre, balance, immobilisations, clôture, TVA, FEC.
 - **Phase 6** — abonnements Stripe (webhooks vérifiés, idempotence) et super administration.
 - **Phase 7** — automatisations, assistant IA (suggestions soumises à validation), intégrations.
 - **Phase 8** — durcissement (CSP par nonce, tests de charge, supervision), optimisation, mise en production.

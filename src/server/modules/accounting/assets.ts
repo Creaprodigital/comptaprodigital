@@ -12,8 +12,8 @@ import { fromIsoDate, toIsoDate, todayInParis, formatIsoForHumans } from "@/lib/
 import type { FixedAssetInput } from "@/lib/schemas/accounting";
 import { lockCompany } from "./entries";
 import { fiscalYearFor, isOpenFor } from "./fiscal-years";
-import { ensureAccount, ensureAccountingSetup } from "./setup";
-import { syncAccountingFor } from "./sync";
+import { ensureAccount } from "./setup";
+import { ensureAccountingReady, syncAccountingFor } from "./sync";
 
 /**
  * Immobilisations et amortissements. Le registre décrit chaque bien et son plan ;
@@ -130,8 +130,8 @@ function assetData(input: FixedAssetInput) {
 export async function createAsset(access: CompanyAccess, userId: string, input: FixedAssetInput, meta: Meta = {}): Promise<AssetView> {
   const companyId = access.company.id;
   if (input.acquisitionDate > todayInParis()) throw errors.validation([{ path: "acquisitionDate", message: "La date d'acquisition ne peut pas être dans le futur" }]);
+  await ensureAccountingReady(access.company);
   const asset = await prisma.$transaction(async (tx) => {
-    await ensureAccountingSetup(tx, companyId);
     const data = assetData(input);
     await ensureAccount(tx, companyId, data.assetAccountNumber, input.label);
     await ensureAccount(tx, companyId, data.depreciationAccountNumber, `Amortissements — ${input.label}`);

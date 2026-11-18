@@ -5,9 +5,11 @@ import { purgeExpiredRateLimits } from "../src/server/security/rate-limit";
 import { runRecurringInvoices } from "../src/server/modules/invoicing/recurring";
 import { runAutomaticReminders } from "../src/server/modules/invoicing/sending";
 import { purgeDeletedDocuments } from "../src/server/modules/documents/service";
+import { resyncAll } from "../src/server/modules/accounting/sync";
 
 /**
- * Tâches quotidiennes : factures récurrentes, relances automatiques, purges.
+ * Tâches quotidiennes : factures récurrentes, relances automatiques, contrôle des
+ * écritures comptables automatiques, purges.
  * À planifier une fois par jour (cron) — voir docs/DEPLOIEMENT-HOSTINGER.md.
  *   npm run jobs:daily
  */
@@ -17,12 +19,25 @@ async function main() {
   console.log(`Factures récurrentes : ${recurring.generated} générée(s), ${recurring.issued} émise(s), ${recurring.sent} envoyée(s), ${recurring.errors} erreur(s)`);
   const reminders = await runAutomaticReminders();
   console.log(`Relances : ${reminders.sent} envoyée(s), ${reminders.skipped} en attente, ${reminders.errors} erreur(s)`);
+  // Filet de sécurité : recalcul des écritures automatiques (sans effet si tout est à jour).
+  const companies = await prisma.company.findMany({ where: { status: "ACTIVE", accountingMode: "DOUBLE_ENTRY" }, select: { id: true, fiscalYearStartMonth: true, accountingMode: true } });
+  let accountingChanges = 0;
+  let accountingErrors = 0;
+  for (const company of companies) {
+    try {
+      accountingChanges += (await resyncAll(company)).changed;
+    } catch (error) {
+      accountingErrors++;
+      console.error(`Comptabilité ${company.id} :`, error);
+    }
+  }
+  console.log(`Comptabilité : ${companies.length} entreprise(s) vérifiée(s), ${accountingChanges} écriture(s) mise(s) à jour, ${accountingErrors} erreur(s)`);
   const sessions = await purgeStaleSessions();
   const counters = await purgeExpiredRateLimits();
   const documents = await purgeDeletedDocuments();
   console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit, ${documents} document(s) supprimé(s) depuis plus de 30 jours`);
   console.log(`Terminé en ${Date.now() - startedAt} ms`);
-  if (recurring.errors + reminders.errors > 0) process.exitCode = 1;
+  if (recurring.errors + reminders.errors + accountingErrors > 0) process.exitCode = 1;
 }
 
 main()
