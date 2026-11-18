@@ -57,15 +57,17 @@ type DocumentWithLinks = Document & { links: DocumentLink[] };
 async function resolveLinks(companyId: string, links: DocumentLink[]): Promise<Map<string, DocumentLinkView>> {
   const db = tenantDb(companyId);
   const idsOf = (type: LinkedEntityType) => [...new Set(links.filter((l) => l.entityType === type).map((l) => l.entityId))];
-  const [transactions, invoices, quotes] = await Promise.all([
+  const [transactions, invoices, quotes, purchases] = await Promise.all([
     idsOf("BANK_TRANSACTION").length ? db.bankTransaction.findMany({ where: { id: { in: idsOf("BANK_TRANSACTION") } }, select: { id: true, label: true, date: true } }) : [],
     idsOf("INVOICE").length ? db.invoice.findMany({ where: { id: { in: idsOf("INVOICE") } }, select: { id: true, number: true } }) : [],
     idsOf("QUOTE").length ? db.quote.findMany({ where: { id: { in: idsOf("QUOTE") } }, select: { id: true, number: true } }) : [],
+    idsOf("PURCHASE").length ? db.purchase.findMany({ where: { id: { in: idsOf("PURCHASE") } }, select: { id: true, reference: true, label: true, supplier: { select: { name: true } } } }) : [],
   ]);
   const labels = new Map<string, { label: string; href: string }>();
   for (const t of transactions) labels.set(`BANK_TRANSACTION:${t.id}`, { label: `Opération du ${formatIsoForHumans(toIsoDate(t.date))} — ${t.label}`, href: `/app/banque/operations/${t.id}` });
   for (const i of invoices) labels.set(`INVOICE:${i.id}`, { label: `Facture ${i.number ?? "(brouillon)"}`, href: `/app/factures/${i.id}` });
   for (const q of quotes) labels.set(`QUOTE:${q.id}`, { label: `Devis ${q.number ?? "(brouillon)"}`, href: `/app/devis/${q.id}` });
+  for (const p of purchases) labels.set(`PURCHASE:${p.id}`, { label: `Facture d'achat ${p.reference ?? p.label}${p.supplier ? ` — ${p.supplier.name}` : ""}`, href: `/app/achats/${p.id}` });
   return new Map(
     links.map((link) => {
       const target = labels.get(`${link.entityType}:${link.entityId}`);
@@ -355,6 +357,11 @@ async function assertEntity(access: CompanyAccess, link: DocumentLinkInput): Pro
     const invoice = await access.db.invoice.findFirst({ where: { id: link.entityId }, select: { number: true } });
     if (!invoice) throw errors.notFound("Facture introuvable.");
     return `la facture ${invoice.number ?? "(brouillon)"}`;
+  }
+  if (link.entityType === "PURCHASE") {
+    const purchase = await access.db.purchase.findFirst({ where: { id: link.entityId }, select: { reference: true, label: true } });
+    if (!purchase) throw errors.notFound("Facture d'achat introuvable.");
+    return `la facture d'achat ${purchase.reference ?? purchase.label}`;
   }
   const quote = await access.db.quote.findFirst({ where: { id: link.entityId }, select: { number: true } });
   if (!quote) throw errors.notFound("Devis introuvable.");

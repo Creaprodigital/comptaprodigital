@@ -138,7 +138,7 @@ export type TransactionsQuery = Partial<z.infer<typeof transactionsQuerySchema>>
 
 // --- Documents -------------------------------------------------------------------
 
-export const LINKABLE_ENTITY_TYPES = ["BANK_TRANSACTION", "INVOICE", "QUOTE"] as const;
+export const LINKABLE_ENTITY_TYPES = ["BANK_TRANSACTION", "INVOICE", "QUOTE", "PURCHASE"] as const;
 
 export const documentUpdateSchema = z.object({
   name: text(255).min(1, "Indiquez un nom"),

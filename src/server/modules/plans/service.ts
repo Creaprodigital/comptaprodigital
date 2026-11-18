@@ -78,6 +78,8 @@ export async function companyHasModule(companyId: string, moduleKey: string): Pr
 const MODULE_NOTICES: Record<string, string> = {
   bank: "Le suivi bancaire est inclus à partir de la formule Pro.",
   documents: "La gestion documentaire est incluse à partir de la formule Pro.",
+  accounting: "La comptabilité en partie double est incluse à partir de la formule Pro.",
+  vat: "Le suivi et la préparation des déclarations de TVA sont inclus à partir de la formule Pro.",
 };
 
 /** Refuse l'accès à un module que la formule de l'entreprise n'inclut pas. */

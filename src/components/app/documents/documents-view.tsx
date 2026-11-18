@@ -17,7 +17,7 @@ import { Field } from "@/components/ui/field";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type EntityLink = { entityType: "BANK_TRANSACTION" | "INVOICE" | "QUOTE"; entityId: string };
+type EntityLink = { entityType: "BANK_TRANSACTION" | "INVOICE" | "QUOTE" | "PURCHASE"; entityId: string };
 
 const contentUrl = (companyId: string, documentId: string, download = false) => `/api/v1/companies/${companyId}/documents/${documentId}/content${download ? "?download=1" : ""}`;
 
