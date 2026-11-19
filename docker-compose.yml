@@ -2,7 +2,9 @@
 # ComptaPro Digital — production (VPS Ubuntu)
 #   docker compose up -d                 # application, base de données, HTTPS
 #   docker compose run --rm migrate      # migrations + données de référence
-#   docker compose run --rm jobs         # tâches quotidiennes (récurrence, relances)
+#   docker compose run --rm jobs         # tâches quotidiennes (récurrence, relances, purges, alertes)
+#   docker compose run --rm check        # contrôle de l'installation de production
+#   docker compose --profile antivirus up -d   # avec l'antivirus ClamAV (CLAMAV_HOST=clamav)
 # Les secrets sont lus dans le fichier .env (jamais versionné).
 # =============================================================================
 name: comptapro
@@ -64,6 +66,44 @@ services:
         condition: service_healthy
     networks: [internal]
 
+  # Contrôle de l'installation : configuration, migrations, services externes, administrateurs.
+  check:
+    image: ${APP_TOOLS_IMAGE:-comptapro-tools:latest}
+    build:
+      context: .
+      target: tools
+    profiles: [tools]
+    command: ["npx", "tsx", "scripts/check-production.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      NODE_ENV: production
+      STORAGE_LOCAL_DIR: /data/storage
+    volumes:
+      - documents_data:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  # Antivirus facultatif (≈ 1,5 Go de mémoire pour les signatures). Activer avec le profil
+  # « antivirus » et CLAMAV_HOST=clamav dans .env : chaque fichier déposé est alors analysé.
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: [antivirus]
+    restart: unless-stopped
+    volumes:
+      - clamav_data:/var/lib/clamav
+    expose:
+      - "3310"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      start_period: 300s
+      retries: 3
+    networks: [internal]
+
   db:
     image: mysql:8.4
     restart: unless-stopped
@@ -110,6 +150,7 @@ volumes:
   documents_data:
   caddy_data:
   caddy_config:
+  clamav_data:
 
 networks:
   internal:

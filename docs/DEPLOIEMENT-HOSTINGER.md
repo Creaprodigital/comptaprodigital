@@ -219,8 +219,8 @@ Automatiquement avec GitHub Actions (`.github/workflows/deploy.yml`) :
 3. Sur le VPS, autorisez la lecture des images : `docker login ghcr.io` avec un jeton en lecture seule.
 4. Publiez une étiquette (`git tag v0.1.0 && git push origin v0.1.0`) ou lancez le workflow manuellement.
 
-Le workflow construit les images, sauvegarde la base, applique les migrations, redémarre l'application et vérifie
-`/api/v1/health`.
+Le workflow construit les images, sauvegarde la base, applique les migrations, redémarre l'application, vérifie
+`/api/v1/health`, puis lance le contrôle complet de l'installation (`docker compose run --rm check`).
 
 ## 8. Exploitation
 
@@ -231,6 +231,9 @@ Le workflow construit les images, sauvegarde la base, applique les migrations, r
 | Redémarrer l'application | `docker compose restart app` |
 | Console MySQL | `docker compose exec db mysql -u comptapro -p comptapro` |
 | Tâches quotidiennes à la demande | `docker compose run --rm jobs` |
+| Contrôle de l'installation | `docker compose run --rm check` |
+| Test de restauration | `./scripts/verify-restore.sh` (voir SECURITE.md) |
+| Rotation de la clé de chiffrement | voir SECURITE.md, « Rotation de la clé de chiffrement » |
 
 Points d'attention :
 
@@ -239,4 +242,25 @@ Points d'attention :
 - **Une seule instance** suffit au démarrage. Les sessions et les compteurs de débit étant en base, plusieurs
   instances peuvent être placées derrière le proxy sans autre changement.
 - **Supervision** : surveillez `/api/v1/health`, l'espace disque (`/var/lib/docker`, `/var/backups`) et l'expiration
-  du domaine. Les erreurs applicatives inattendues sont enregistrées dans la table `application_errors`.
+  du domaine. Les erreurs applicatives, les violations de CSP, les paiements en échec, les demandes de support en
+  souffrance et les services en défaut sont envoyés chaque jour par e-mail aux super administrateurs et à l'adresse
+  du support (tâche quotidienne), et consultables dans `/admin`.
+- **Antivirus** : `docker compose --profile antivirus up -d` et `CLAMAV_HOST="clamav"` dans `.env` ; le premier
+  démarrage télécharge les signatures (plusieurs minutes, ≈ 1,5 Go de mémoire).
+
+## 9. Check-list de mise en production
+
+1. Domaine pointé vers le VPS, pare-feu (22, 80, 443), utilisateur `deploy`, connexion SSH par clé uniquement.
+2. `.env` complet : `APP_URL` en `https://`, `APP_ENCRYPTION_KEY` générée (`openssl rand -base64 32`) et copiée hors
+   du serveur, mots de passe MySQL forts, SMTP (SPF et DKIM du domaine configurés), `SEED_ADMIN_EMAIL`.
+3. `docker compose up -d`, `docker compose run --rm migrate`, connexion du super administrateur et activation de sa
+   double authentification.
+4. Stripe en clés de production, webhook créé, formules synchronisées (`/admin/formules`) ; essai d'un paiement
+   réel remboursé.
+5. Clé Anthropic (facultatif) ; ClamAV (recommandé si la mémoire le permet).
+6. Paramètres globaux (`/admin/parametres`) : adresse du support, nom d'expéditeur, mention de pied de page.
+7. Pages légales complétées (`NEXT_PUBLIC_LEGAL_*`) et relues par un juriste ; accord de sous-traitance.
+8. Cron : sauvegarde de la base (2 h 30), des documents (2 h 45), tâches quotidiennes (6 h 15) ; copie des
+   sauvegardes hors du serveur ; premier `verify-restore.sh` réussi.
+9. `docker compose run --rm check` : **aucun point bloquant**.
+10. Validation des mécanismes comptables et fiscaux par un professionnel compétent avant commercialisation.

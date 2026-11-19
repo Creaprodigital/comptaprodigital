@@ -399,4 +399,6 @@ documentation des variables d'environnement, commit.
 
 - **Phase 6** — ✅ abonnements Stripe et super administration.
 - **Phase 7** — ✅ assistant IA (suggestions soumises à validation) et contrôles automatiques ; intégrations bancaire et de facturation électronique préparées, en attente de prestataires agréés.
-- **Phase 8** — durcissement (CSP par nonce, tests de charge, supervision), optimisation, mise en production.
+- **Phase 8** — ✅ sécurité (anti-rejeu TOTP, rotation de clé, antivirus, SRI partielle), RGPD (effacement, conservation),
+  tests (matrice des droits, restauration, secrets du bundle), optimisation mesurée, contrôle de production et
+  alertes. Une CSP par nonce a été écartée : incompatible avec le prérendu partiel (voir SECURITE.md).

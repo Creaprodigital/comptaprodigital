@@ -240,6 +240,10 @@ export async function completeMfaLogin(pending: AuthContext, code: string, meta:
     if (valid) await recordAudit({ action: "auth.mfa.recovery_code_used", userId: user.id, ...meta });
   }
 
+  if (!valid && step !== null) {
+    // Code correct mais déjà utilisé (rejeu, ou nouvelle connexion dans les 30 s) : message explicite.
+    throw new AppError(401, "MFA_CODE_ALREADY_USED", "Ce code a déjà été utilisé. Attendez le code suivant de votre application d'authentification, puis réessayez.");
+  }
   if (!valid) {
     await recordAudit({ action: "auth.mfa.failed", userId: user.id, ...meta });
     throw new AppError(401, "INVALID_MFA_CODE", "Code de vérification incorrect.");

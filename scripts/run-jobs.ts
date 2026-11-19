@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { runRetentionPurges } from "../src/server/modules/retention/service";
+import { sendDailyAlerts } from "../src/server/ops/alerts";
 import { prisma } from "../src/server/db";
 import { purgeStaleSessions } from "../src/server/auth/session-store";
 import { purgeExpiredRateLimits } from "../src/server/security/rate-limit";
@@ -42,6 +43,11 @@ async function main() {
   console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit, ${documents} document(s) supprimé(s) depuis plus de 30 jours`);
   const retention = await runRetentionPurges();
   console.log(`Conservation : ${Object.entries(retention).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+  const alerts = await sendDailyAlerts().catch((error) => {
+    console.error("Alertes :", error);
+    return { sent: 0, alerts: -1 };
+  });
+  console.log(alerts.alerts > 0 ? `Alertes : ${alerts.alerts} point(s) signalé(s) à ${alerts.sent} destinataire(s)` : "Alertes : rien à signaler");
   // Dernière exécution, affichée dans la supervision de l'administration.
   await prisma.applicationSetting.upsert({ where: { key: "jobs.daily.last_run" }, create: { key: "jobs.daily.last_run", value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt }, description: "Dernière exécution des tâches quotidiennes" }, update: { value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt } } });
   console.log(`Terminé en ${Date.now() - startedAt} ms`);

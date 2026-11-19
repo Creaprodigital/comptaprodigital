@@ -180,7 +180,7 @@ describe("double authentification", () => {
     await expect(completeMfaLogin(pendingAuth!, "123456")).rejects.toMatchObject({ code: "INVALID_MFA_CODE" });
     // Anti-rejeu : le code qui vient d'activer la double authentification ne peut pas resservir.
     const code = currentTotpCode(stored.mfaSecretEncrypted!);
-    await expect(completeMfaLogin(pendingAuth!, code)).rejects.toMatchObject({ code: "INVALID_MFA_CODE" });
+    await expect(completeMfaLogin(pendingAuth!, code)).rejects.toMatchObject({ code: "MFA_CODE_ALREADY_USED" });
     expect(await prisma.auditLog.count({ where: { userId: user.id, action: "auth.mfa.replay_rejected" } })).toBe(1);
     // Code suivant (simulé en reculant le dernier pas utilisé, comme si 30 s s'étaient écoulées).
     await prisma.user.update({ where: { id: user.id }, data: { mfaLastUsedStep: { decrement: 2 } } });

@@ -67,6 +67,15 @@ const euros = (amount: string) => `${amount.replace(".", ",")} €`;
 const longDate = (date: Date) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(date);
 
 export const mailTemplates = {
+  adminAlerts(to: string, alerts: Array<{ label: string; detail: string }>) {
+    return render({
+      to,
+      subject: `${alerts.length} point(s) à vérifier sur la plateforme — ${siteConfig.name}`,
+      greeting: "Bonjour,",
+      paragraphs: ["Synthèse des dernières 24 heures :", ...alerts.map((a) => `• ${a.label}${a.detail ? ` — ${a.detail}` : ""}`)],
+      action: { label: "Ouvrir l'administration", url: appUrl("/admin") },
+    });
+  },
   accountDeleted(to: string, firstName: string) {
     return render({
       to,

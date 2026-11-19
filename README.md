@@ -19,7 +19,7 @@ comptabilité, TVA, documents, abonnements et administration.
 | 5 | Moteur comptable, journaux, TVA, exports | ✅ Livrée |
 | 6 | Stripe et super administration | ✅ Livrée |
 | 7 | Automatisations, IA, intégrations | ✅ Livrée (IA et contrôles ; voir les limites ci-dessous) |
-| 8 | Durcissement sécurité, optimisation, déploiement | 🔶 Socle en place (Docker, CI, sauvegardes) |
+| 8 | Tests, sécurité, optimisation, déploiement | ✅ Livrée |
 
 Ce qui fonctionne réellement aujourd'hui :
 
@@ -71,6 +71,11 @@ Ce qui fonctionne réellement aujourd'hui :
   l'aide d'outils en lecture seule. Sans clé d'API, ces fonctions sont masquées.
 - **Contrôles automatiques** (sans IA) — doublons possibles (banque et achats), dépenses sans justificatif, opérations
   non catégorisées, TVA et montants inhabituels, factures clients échues. Ils signalent, ne corrigent rien.
+
+- **Exploitation** (phase 8) — anti-rejeu des codes TOTP, rotation de la clé de chiffrement, antivirus ClamAV
+  facultatif, intégrité des scripts d'amorçage (SRI, partielle) et rapports de violation CSP, suppression de compte en libre-service,
+  purges selon la politique de conservation, test de restauration automatisé, contrôle de l'installation de
+  production, alerte quotidienne aux administrateurs, optimisations mesurées (`docs/PERFORMANCE.md`).
 
 Non livré en phase 7 : la synchronisation bancaire par un prestataire agréé et la transmission des factures
 électroniques via une plateforme agréée nécessitent un contrat avec ces prestataires ; seules leurs interfaces

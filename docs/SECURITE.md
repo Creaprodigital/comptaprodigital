@@ -9,7 +9,7 @@
 |---|---|---|
 | Mots de passe | Argon2id ; 12 caractères minimum, quatre familles ; jamais journalisés | `tests/unit/security.test.ts`, `tests/integration/auth.test.ts` |
 | Sessions | Jeton opaque 256 bits, empreinte SHA-256 en base, cookie `httpOnly` / `SameSite=Lax` / `Secure` + `__Host-` en HTTPS, expiration absolue et d'inactivité, révocation immédiate | intégration + `tests/e2e/securite.spec.ts` |
-| Double authentification | TOTP, secret chiffré AES-256-GCM, codes de secours hachés à usage unique, session provisoire sans droits | intégration + parcours e2e |
+| Double authentification | TOTP, secret chiffré AES-256-GCM, codes de secours hachés à usage unique, session provisoire sans droits ; **anti-rejeu** : un code (pas de 30 s) n'est accepté qu'une fois | intégration + parcours e2e |
 | Anti-énumération | Réponses identiques à l'inscription, à la connexion et à la réinitialisation, que le compte existe ou non | intégration |
 | Force brute | Verrouillage 15 min après 5 échecs ; limitation de débit par IP et par adresse e-mail, stockée en base | intégration |
 | CSRF | Contrôle de l'en-tête `Origin` sur toute requête mutatrice, corps JSON exigé, cookie `SameSite=Lax` | e2e |
@@ -18,8 +18,14 @@
 | Validation | Schémas Zod côté serveur sur chaque entrée, erreurs par champ, aucune fuite technique | unitaires + e2e |
 | Contrôle d'accès | RBAC en base, vérifié à chaque appel d'API et rendu de page ; 404 pour un non-membre | `tests/integration/tenancy.test.ts`, e2e |
 | Isolation multi-entreprises | Client Prisma cloisonné : filtre imposé, écriture ou filtre inter-entreprises rejeté | intégration + e2e |
-| En-têtes | CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, pas de `X-Powered-By` | e2e |
-| Chiffrement | TLS par Caddy ; secrets MFA et IBAN chiffrés au repos ; jetons stockés hachés | unitaires |
+| En-têtes | CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP/CORP, pas de `X-Powered-By` | e2e |
+| Intégrité des scripts | SRI (option expérimentale de Next.js) : empreinte SHA-256 sur les scripts d'amorçage — la version actuelle ne l'ajoute pas aux scripts chargés ensuite ; violations de CSP rapportées et consignées (`/api/v1/csp-report`) | e2e |
+| Chiffrement | TLS par Caddy ; secrets MFA et IBAN chiffrés au repos ; jetons stockés hachés ; rotation de la clé outillée (`npm run keys:rotate`) | unitaires, `tests/integration/securite.test.ts` |
+| Antivirus | Analyse ClamAV facultative et bloquante avant tout stockage de fichier (documents, logo) ; dépôt refusé si l'antivirus configuré ne répond pas | `tests/integration/securite.test.ts` |
+| Droit à l'effacement | Suppression du compte en libre-service : anonymisation, résiliation, archivage des entreprises (conservation légale des pièces) | `tests/integration/rgpd.test.ts` |
+| Conservation | Purges quotidiennes selon les durées publiées (jetons, erreurs, notifications, usage de l'IA, journaux) | `tests/integration/rgpd.test.ts` |
+| Matrice des droits | Chaque rôle × chaque permission vérifié sur base réelle, y compris révocation, suspension et abonnement inactif | `tests/integration/permissions.test.ts` |
+| Secrets côté client | Aucun secret dans les fichiers servis au navigateur, vérifié à chaque build en CI | `scripts/check-client-bundle.mjs` |
 | Audit | Journal en ajout seul des actions sensibles (connexions, MFA, membres, entreprise), sans secret | intégration |
 | Secrets | Variables d'environnement validées au démarrage, jamais envoyées au navigateur, `.env` ignoré par Git | revue |
 | Formulaires | Méthode POST explicite : un envoi avant le chargement du JavaScript ne place jamais un mot de passe dans l'URL | revue |
@@ -41,29 +47,37 @@
 | Assistant IA | Clé serveur uniquement ; consentement de l'entreprise ; outils en lecture seule, cloisonnés et filtrés par rôle ; aucune proposition appliquée sans validation ; quota et journal d'usage | intégration, e2e |
 | Export du journal d'audit | Cellules neutralisées contre l'injection de formules (CSV) | intégration |
 
-## Limites connues et travaux restants (phase 8)
+## Choix assumés et limites connues
 
-- **CSP** : `script-src` autorise encore `'unsafe-inline'` (hydratation). Passage à une CSP par nonce à prévoir.
+- **CSP et scripts en ligne** : `script-src` autorise `'unsafe-inline'`. Une CSP par nonce est incompatible avec le
+  prérendu partiel (`cacheComponents`) sur lequel repose l'application (documentation Next.js, « Content Security
+  Policy »). Compensations : aucune source externe, aucun `eval` en production, échappement systématique par React,
+  intégrité (SRI) des scripts d'amorçage — partielle, l'option étant expérimentale — et rapports de violation
+  consignés et signalés dans l'alerte quotidienne.
 - **Adresse IP du client** : lue dans `X-Forwarded-For`. L'application doit donc toujours être derrière le reverse
   proxy fourni, qui écrase cet en-tête.
-- **TOTP** : un code reste réutilisable pendant sa fenêtre de validité (30 s, ± 1 pas) ; la limitation de débit en
-  réduit l'intérêt, un anti-rejeu strict reste à ajouter.
-- **Chiffrement au repos de la base** : à assurer au niveau du volume du VPS ou de MySQL (non configuré ici).
-- **Purge planifiée** : assurée par la tâche quotidienne (`jobs`), à condition de la planifier (voir le guide de
-  déploiement). Les jetons de vérification expirés ne sont pas encore purgés.
-- **Clé de chiffrement** : `APP_ENCRYPTION_KEY` protège les secrets en base et les documents. Sa rotation n'est
-  pas outillée ; sa perte rend les documents illisibles. À conserver hors du serveur.
-- **Documents sur disque local** : le dossier de stockage doit être sauvegardé en plus de la base (voir le guide
-  de déploiement). Avec S3, activez le versionnage et la réplication chez le fournisseur.
-- **Suppression de compte en libre-service** : non livrée (l'export des données l'est). Les demandes d'effacement
-  sont à traiter manuellement en attendant, en respectant les durées de conservation légales.
-- **Audit externe** : test d'intrusion et revue de code indépendants recommandés avant ouverture au public.
-- **Antivirus des pièces jointes** : non intégré. Les fichiers ne sont jamais exécutés ni interprétés par le
-  serveur, mais un document téléchargé par un utilisateur peut contenir un contenu malveillant pour son poste.
-- **Journalisation centralisée, alertes** : à traiter avec la supervision.
-- **Super administrateurs** : désignés uniquement par le seed (`SEED_ADMIN_EMAIL`) ou en base ; pas de gestion
-  des comptes administrateurs depuis l'interface. Limitez leur nombre et activez leur double authentification
-  avant toute utilisation.
+- **Chiffrement au repos de la base** : à assurer au niveau du volume du VPS ou de MySQL (non configuré ici). Les
+  secrets sensibles (TOTP, IBAN) et les documents sont, eux, chiffrés par l'application.
+- **Rotation de la clé** : outillée, mais la clé reste unique pour toute la plateforme ; sa perte rend les documents
+  illisibles. À conserver hors du serveur, avec la phrase secrète des sauvegardes.
+- **Antivirus** : facultatif (≈ 1,5 Go de mémoire pour ClamAV) ; sans lui, les fichiers ne sont jamais exécutés ni
+  interprétés par le serveur, mais un document déposé pourrait être malveillant pour le poste qui l'ouvre.
+- **Suppression de compte** : refusée tant qu'une entreprise du titulaire compte d'autres membres (pas de transfert
+  de propriété automatique) ; les super administrateurs ne se suppriment pas depuis l'application.
+- **Super administrateurs** : désignés uniquement par le seed (`SEED_ADMIN_EMAIL`) ou en base.
+- **Journalisation centralisée** : les journaux restent ceux des conteneurs ; l'alerte quotidienne par e-mail couvre
+  erreurs, violations CSP, paiements en échec, demandes en souffrance et services en défaut.
+- **Audit externe** : un test d'intrusion et une revue de code indépendants restent recommandés avant ouverture au
+  public, ainsi que la validation des mécanismes comptables et fiscaux par un professionnel compétent.
+
+### Rotation de la clé de chiffrement
+
+1. Sauvegardez la base et les documents.
+2. Générez une nouvelle clé (`openssl rand -base64 32`) ; dans `.env`, placez l'ancienne dans
+   `APP_ENCRYPTION_KEY_PREVIOUS` et la nouvelle dans `APP_ENCRYPTION_KEY`, puis redémarrez : tout reste lisible.
+3. Lancez `npm run keys:rotate` (ou `docker compose run --rm migrate npx tsx scripts/rotate-encryption-key.ts`) :
+   secrets et documents sont rechiffrés ; la commande peut être relancée sans risque.
+4. Retirez `APP_ENCRYPTION_KEY_PREVIOUS` et redémarrez. Conservez l'ancienne clé avec les sauvegardes antérieures.
 
 ## RGPD
 
@@ -73,8 +87,11 @@
   (`GET /api/v1/me/export`), journalisé.
 - **Rôles** : l'éditeur est responsable de traitement pour les comptes, sous-traitant pour les données saisies dans
   les entreprises (clients, fournisseurs…). Un accord de sous-traitance est à joindre aux CGV.
-- **Durées de conservation** : annoncées dans la politique de confidentialité (pièces comptables : dix ans). Leur
-  application automatique (purges, anonymisation) reste à implémenter.
+- **Durées de conservation** : annoncées dans la politique de confidentialité et appliquées chaque jour par
+  `src/server/modules/retention/service.ts` ; les pièces et écritures comptables sont conservées dix ans.
+- **Droit à l'effacement** : suppression du compte depuis *Compte et sécurité* (mot de passe, code de double
+  authentification, confirmation). Les données personnelles sont anonymisées ; les entreprises sans autre membre
+  sont archivées et leurs pièces conservées pendant la durée légale, sans accès.
 - **Registre des traitements, analyse d'impact, liste des sous-traitants** : documents à établir par l'éditeur.
 - **IA** : Anthropic intervient comme sous-traitant lorsque l'entreprise active l'assistant (activation facultative,
   révocable, journalisée). Vérifier les conditions contractuelles (conservation des données, transferts hors UE) et
@@ -87,25 +104,28 @@
 
 `scripts/backup-db.sh` produit un export complet de la base, compressé et chiffré en AES-256 (clé dérivée par
 PBKDF2 d'une phrase secrète stockée dans un fichier protégé), accompagné d'une somme de contrôle, avec rotation.
-`scripts/restore-db.sh` vérifie la somme de contrôle, déchiffre et recharge l'export.
+`scripts/restore-db.sh` vérifie la somme de contrôle, contrôle l'intégrité complète du flux déchiffré (CRC gzip)
+**avant** tout import, puis recharge l'export. `scripts/verify-restore.sh` automatise le test de restauration.
 
-Procédure de test de restauration (à rejouer au moins une fois par trimestre et après chaque changement de schéma
-important) :
+Test de restauration (au moins une fois par mois, et après chaque changement de schéma important), dans une base
+dédiée créée une fois pour toutes :
 
 ```bash
-mysql -uroot -p -e "CREATE DATABASE comptapro_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -uroot -p -e "CREATE DATABASE comptapro_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL ON comptapro_restore.* TO 'comptapro'@'%';"
 ```
 
 ```bash
-DATABASE_URL="mysql://comptapro:MOT_DE_PASSE@127.0.0.1:3306/comptapro_restore" BACKUP_PASSPHRASE_FILE=/etc/comptapro/backup.key ./scripts/restore-db.sh /var/backups/comptapro/<fichier>.sql.gz.enc --yes
+cd /opt/comptapro && set -a && . ./backup.env && set +a && RESTORE_DATABASE_URL="mysql://comptapro:MOT_DE_PASSE@127.0.0.1:3306/comptapro_restore" ./scripts/verify-restore.sh
 ```
 
-Comparez ensuite quelques volumes entre la production et la base restaurée (nombre d'utilisateurs, d'entreprises,
-de factures, somme des montants facturés), puis supprimez la base de test.
+Le script restaure la sauvegarde la plus récente, vérifie le nombre de tables et de migrations, compare le nombre de
+lignes de chaque table avec la production et contrôle l'équilibre de chaque écriture comptable. Il termine par
+« RESTAURATION VÉRIFIÉE » ou échoue avec un code non nul.
 
-Cette procédure a été exécutée pendant le développement : sauvegarde de la base de démonstration, restauration dans
-une base vide, comptages et totaux identiques ; une mauvaise phrase secrète fait échouer la restauration sans rien
-écrire.
+Il est exécuté à chaque intégration continue (sauvegarde puis restauration de la base de test) et l'a été pendant
+le développement sur la base de démonstration. Ont été vérifiés : restauration complète (54 tables, migrations,
+écritures équilibrées), refus d'une sauvegarde altérée (somme de contrôle, puis contrôle d'intégrité même sans
+somme) et refus d'une mauvaise phrase secrète, **sans rien importer** dans ces deux derniers cas.
 
 À conserver **hors du serveur** : la phrase secrète des sauvegardes, la clé `APP_ENCRYPTION_KEY`, et une copie
 récente des sauvegardes. Sans `APP_ENCRYPTION_KEY`, les secrets de double authentification et les IBAN d'une base

@@ -80,13 +80,15 @@ test("parcours complet : inscription, vérification, entreprise, tableau de bord
   });
 
   let totp: OTPAuth.TOTP;
+  let activationCode = "";
   await test.step("activation de la double authentification", async () => {
     await page.goto("/app/compte");
     await page.getByRole("button", { name: "Activer la double authentification" }).click();
     const secret = (await page.locator("code").textContent())!.trim();
     totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret), algorithm: "SHA1", digits: 6, period: 30 });
 
-    await page.getByLabel("Code à 6 chiffres").fill(totp.generate());
+    activationCode = totp.generate();
+    await page.getByLabel("Code à 6 chiffres").fill(activationCode);
     await page.getByRole("button", { name: "Activer", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Conservez vos codes de secours" })).toBeVisible();
     await expect(page.getByRole("dialog").getByRole("listitem")).toHaveCount(10);
@@ -108,7 +110,12 @@ test("parcours complet : inscription, vérification, entreprise, tableau de bord
     await page.getByRole("button", { name: "Valider" }).click();
     await expect(page.getByText("Code de vérification incorrect.")).toBeVisible();
 
-    await page.getByLabel("Code de vérification").fill(totp.generate());
+    // Anti-rejeu : le code qui a servi à activer la double authentification est refusé, avec un message clair.
+    await page.getByLabel("Code de vérification").fill(activationCode);
+    await page.getByRole("button", { name: "Valider" }).click();
+    await expect(page.getByText("Ce code a déjà été utilisé")).toBeVisible();
+    // Code suivant (accepté grâce à la tolérance d'un pas pour les décalages d'horloge).
+    await page.getByLabel("Code de vérification").fill(totp.generate({ timestamp: Date.now() + 30_000 }));
     await page.getByRole("button", { name: "Valider" }).click();
     await expect(page).toHaveURL(/\/app\/tableau-de-bord/);
     await expect(page.getByRole("heading", { name: "Tableau de bord" })).toBeVisible();
