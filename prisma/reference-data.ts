@@ -42,12 +42,14 @@ const PLANS = [
       "Suivi et préparation de la TVA",
       "Import de relevés bancaires",
       "Gestion documentaire",
+      "Assistant IA : lecture des justificatifs, suggestions de catégories",
       "Accès pour votre expert-comptable",
     ],
     limits: {
       maxCompanies: 1,
       maxMembers: 2,
-      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents"],
+      aiRequestsPerMonth: 300,
+      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents", "ai"],
     },
   },
   {
@@ -70,7 +72,8 @@ const PLANS = [
     limits: {
       maxCompanies: 10,
       maxMembers: null,
-      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents", "automation", "exports", "priority-support"],
+      aiRequestsPerMonth: 1500,
+      modules: ["dashboard", "invoicing", "invoicing-advanced", "customers", "accounting", "vat", "bank", "documents", "ai", "automation", "exports", "priority-support"],
     },
   },
 ] as const;

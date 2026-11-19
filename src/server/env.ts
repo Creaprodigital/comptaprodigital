@@ -49,6 +49,12 @@ const envSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     /** Réservé aux tests : adresse d'un faux serveur Stripe (interdit en production). */
     STRIPE_API_BASE: z.url().optional(),
+    /**
+     * Assistant IA (API Anthropic). Sans clé, les fonctions d'IA sont masquées ; les contrôles
+     * automatiques sans IA restent disponibles. ANTHROPIC_BASE_URL est lu directement par le SDK.
+     */
+    ANTHROPIC_API_KEY: z.string().optional(),
+    AI_MODEL: z.string().min(1).default("claude-opus-5-5"),
   })
   .superRefine((value, ctx) => {
     if (value.NODE_ENV === "production" && !value.SMTP_HOST) {

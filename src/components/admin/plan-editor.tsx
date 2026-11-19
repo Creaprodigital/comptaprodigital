@@ -35,7 +35,7 @@ export function PlanEditor({ plan, stripeEnabled }: { plan: AdminPlan; stripeEna
           trialDays: form.get("trialDays"),
           sortOrder: form.get("sortOrder"),
           features: String(form.get("features") ?? "").split("\n").map((l) => l.trim()).filter(Boolean),
-          limits: { maxCompanies: form.get("maxCompanies"), maxMembers: form.get("maxMembers"), modules },
+          limits: { maxCompanies: form.get("maxCompanies"), maxMembers: form.get("maxMembers"), aiRequestsPerMonth: form.get("aiRequestsPerMonth"), modules },
           isActive: form.get("isActive") === "on",
           isFeatured: form.get("isFeatured") === "on",
         },
@@ -89,9 +89,10 @@ export function PlanEditor({ plan, stripeEnabled }: { plan: AdminPlan; stripeEna
             <Field id={id("trial")} label="Essai (jours)" error={errors.trialDays} hint="0 = sans essai"><Input name="trialDays" type="number" min={0} max={90} defaultValue={plan.trialDays} /></Field>
             <Field id={id("order")} label="Ordre d'affichage" error={errors.sortOrder}><Input name="sortOrder" type="number" min={0} max={100} defaultValue={plan.sortOrder} /></Field>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Field id={id("maxCompanies")} label="Entreprises maximum" error={errors["limits.maxCompanies"]} hint="Vide = illimité"><Input name="maxCompanies" type="number" min={1} defaultValue={plan.limits.maxCompanies ?? ""} /></Field>
             <Field id={id("maxMembers")} label="Membres par entreprise maximum" error={errors["limits.maxMembers"]} hint="Vide = illimité ; propriétaire inclus"><Input name="maxMembers" type="number" min={1} defaultValue={plan.limits.maxMembers ?? ""} /></Field>
+            <Field id={id("aiRequests")} label="Requêtes IA par mois et par entreprise" error={errors["limits.aiRequestsPerMonth"]} hint="Vide = illimité ; module « Assistant IA » requis"><Input name="aiRequestsPerMonth" type="number" min={0} defaultValue={plan.limits.aiRequestsPerMonth ?? ""} /></Field>
           </div>
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Modules inclus</legend>

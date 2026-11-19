@@ -9,6 +9,8 @@ export type PlanLimits = {
   maxMembers: number | null;
   /** Modules fonctionnels inclus dans la formule. */
   modules: string[];
+  /** Requêtes d'IA par entreprise et par mois (null = illimité ; sans effet si le module « ai » n'est pas inclus). */
+  aiRequestsPerMonth: number | null;
 };
 
 export type PublicPlan = {
@@ -30,6 +32,7 @@ export function parsePlanLimits(plan: Pick<SubscriptionPlan, "limits">): PlanLim
     maxCompanies: typeof raw.maxCompanies === "number" ? raw.maxCompanies : null,
     maxMembers: typeof raw.maxMembers === "number" ? raw.maxMembers : null,
     modules: Array.isArray(raw.modules) ? raw.modules.filter((m): m is string => typeof m === "string") : [],
+    aiRequestsPerMonth: typeof raw.aiRequestsPerMonth === "number" ? raw.aiRequestsPerMonth : null,
   };
 }
 
@@ -80,6 +83,7 @@ const MODULE_NOTICES: Record<string, string> = {
   documents: "La gestion documentaire est incluse à partir de la formule Pro.",
   accounting: "La comptabilité en partie double est incluse à partir de la formule Pro.",
   vat: "Le suivi et la préparation des déclarations de TVA sont inclus à partir de la formule Pro.",
+  ai: "L'assistant IA est inclus à partir de la formule Pro.",
 };
 
 /** Refuse l'accès à un module que la formule de l'entreprise n'inclut pas. */

@@ -58,4 +58,5 @@ export const RATE_LIMITS = {
   documentEmail: { name: "documents.send", limit: 60, windowSeconds: 60 * 60 },
   exports: { name: "exports", limit: 30, windowSeconds: 60 * 60 },
   uploads: { name: "uploads", limit: 300, windowSeconds: 60 * 60 },
+  ai: { name: "ai", limit: 120, windowSeconds: 60 * 60 },
 } satisfies Record<string, RateLimitRule>;

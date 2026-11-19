@@ -12,6 +12,7 @@ export const PLAN_MODULES = [
   { key: "vat", label: "TVA" },
   { key: "bank", label: "Banque et rapprochement" },
   { key: "documents", label: "Gestion documentaire" },
+  { key: "ai", label: "Assistant IA" },
   { key: "automation", label: "Automatisations avancées" },
   { key: "exports", label: "Exports comptables" },
   { key: "priority-support", label: "Support prioritaire" },
@@ -29,6 +30,7 @@ export const planUpdateSchema = z.object({
   limits: z.object({
     maxCompanies: optionalLimit,
     maxMembers: optionalLimit,
+    aiRequestsPerMonth: z.union([z.null(), z.literal(""), z.coerce.number().int().min(0).max(1_000_000)]).optional().transform((v) => (v === "" || v === null || v === undefined ? null : v)),
     modules: z.array(z.enum(PLAN_MODULES.map((m) => m.key) as [string, ...string[]])).min(1, "Au moins un module"),
   }),
   isActive: z.boolean(),
