@@ -49,6 +49,16 @@ jobs:
         run: npx prisma validate
       - name: Tests unitaires et d'intégration (base comptapro_test)
         run: npm test
+      - name: Sauvegarde chiffrée et test de restauration
+        env:
+          SOURCE_URL: mysql://root:ci_root_password@127.0.0.1:3306/comptapro_test
+          RESTORE_URL: mysql://root:ci_root_password@127.0.0.1:3306/comptapro_restore
+        run: |
+          mysql -h 127.0.0.1 -uroot -pci_root_password -e "CREATE DATABASE IF NOT EXISTS comptapro_restore"
+          head -c 48 /dev/urandom | base64 > "$RUNNER_TEMP/backup.key" && chmod 600 "$RUNNER_TEMP/backup.key"
+          export BACKUP_PASSPHRASE_FILE="$RUNNER_TEMP/backup.key" BACKUP_DIR="$RUNNER_TEMP/backups"
+          DATABASE_URL="$SOURCE_URL" ./scripts/backup-db.sh
+          DATABASE_URL="$SOURCE_URL" RESTORE_DATABASE_URL="$RESTORE_URL" ./scripts/verify-restore.sh
 
   e2e:
     name: Build de production et tests de bout en bout
@@ -75,6 +85,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Tests de bout en bout (base comptapro_e2e)
         run: npm run test:e2e -- --trace off
+      - name: Absence de secrets dans les fichiers servis au navigateur
+        run: npm run check:bundle
       - name: Rapport Playwright
         if: failure()
         uses: actions/upload-artifact@v4

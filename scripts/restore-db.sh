@@ -43,6 +43,13 @@ trap 'rm -f "$defaults_file"' EXIT
 chmod 600 "$defaults_file"
 printf '[client]\nuser=%s\npassword=%s\nhost=%s\nport=%s\n' "$db_user" "$db_password" "$db_host" "$db_port" > "$defaults_file"
 
+# Première passe sans rien importer : déchiffrement et contrôle d'intégrité gzip (CRC) du flux
+# complet. Une sauvegarde altérée est ainsi refusée avant toute écriture dans la base.
+if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$BACKUP_PASSPHRASE_FILE" -in "$backup_file" 2>/dev/null | gzip -t 2>/dev/null; then
+  echo "Sauvegarde illisible ou altérée (phrase secrète incorrecte ou fichier corrompu) : rien n'a été importé." >&2
+  exit 1
+fi
+
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$BACKUP_PASSPHRASE_FILE" -in "$backup_file" \
   | gunzip \
   | mysql --defaults-extra-file="$defaults_file" --default-character-set=utf8mb4 "$db_name"

@@ -54,7 +54,8 @@ mysqldump --defaults-extra-file="$defaults_file" \
   | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$BACKUP_PASSPHRASE_FILE" -out "$target"
 
 chmod 600 "$target"
-sha256sum "$target" > "$target.sha256"
+# Somme de contrôle avec un nom relatif : vérifiable après copie de la paire de fichiers ailleurs.
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$target")" > "$(basename "$target").sha256")
 find "$BACKUP_DIR" -name '*.sql.gz.enc*' -type f -mtime "+$RETENTION_DAYS" -delete
 
 echo "Sauvegarde chiffrée : $target ($(du -h "$target" | cut -f1))"
