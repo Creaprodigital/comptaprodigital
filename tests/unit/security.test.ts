@@ -44,11 +44,13 @@ describe("double authentification TOTP", () => {
     expect(otpauthUrl).toMatch(/^otpauth:\/\/totp\//);
     const now = new Date("2026-11-13T10:00:00Z");
     const code = currentTotpCode(encryptedSecret, now);
-    expect(verifyTotpCode(encryptedSecret, code, now)).toBe(true);
-    expect(verifyTotpCode(encryptedSecret, code, new Date(now.getTime() + 30_000))).toBe(true);
-    expect(verifyTotpCode(encryptedSecret, code, new Date(now.getTime() + 120_000))).toBe(false);
-    expect(verifyTotpCode(encryptedSecret, "000000", now) && code !== "000000").toBe(false);
-    expect(verifyTotpCode(encryptedSecret, "abcdef", now)).toBe(false);
+    const step = Math.floor(now.getTime() / 30_000);
+    expect(verifyTotpCode(encryptedSecret, code, now)).toBe(step);
+    // Le même code accepté 30 s plus tard désigne le même pas : il pourra être refusé comme rejeu.
+    expect(verifyTotpCode(encryptedSecret, code, new Date(now.getTime() + 30_000))).toBe(step);
+    expect(verifyTotpCode(encryptedSecret, code, new Date(now.getTime() + 120_000))).toBeNull();
+    if (code !== "000000") expect(verifyTotpCode(encryptedSecret, "000000", now)).toBeNull();
+    expect(verifyTotpCode(encryptedSecret, "abcdef", now)).toBeNull();
   });
 
   it("génère dix codes de secours uniques, stockés hachés", () => {

@@ -178,7 +178,13 @@ describe("double authentification", () => {
     expect(pendingAuth?.session.mfaPending).toBe(true);
 
     await expect(completeMfaLogin(pendingAuth!, "123456")).rejects.toMatchObject({ code: "INVALID_MFA_CODE" });
-    const completed = await completeMfaLogin(pendingAuth!, currentTotpCode(stored.mfaSecretEncrypted!));
+    // Anti-rejeu : le code qui vient d'activer la double authentification ne peut pas resservir.
+    const code = currentTotpCode(stored.mfaSecretEncrypted!);
+    await expect(completeMfaLogin(pendingAuth!, code)).rejects.toMatchObject({ code: "INVALID_MFA_CODE" });
+    expect(await prisma.auditLog.count({ where: { userId: user.id, action: "auth.mfa.replay_rejected" } })).toBe(1);
+    // Code suivant (simulé en reculant le dernier pas utilisé, comme si 30 s s'étaient écoulées).
+    await prisma.user.update({ where: { id: user.id }, data: { mfaLastUsedStep: { decrement: 2 } } });
+    const completed = await completeMfaLogin(pendingAuth!, code);
     expect(completed.status).toBe("authenticated");
     expect(await validateSessionToken(completed.token)).not.toBeNull();
     // La session provisoire est détruite : le jeton ne peut pas être rejoué.
@@ -188,7 +194,7 @@ describe("double authentification", () => {
   it("accepte un code de secours une seule fois", async () => {
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "mfa@exemple.test" } });
     const auth = await validateSessionToken((await createSession({ userId: user.id })).token);
-    await prisma.user.update({ where: { id: user.id }, data: { mfaEnabledAt: null } });
+    await prisma.user.update({ where: { id: user.id }, data: { mfaEnabledAt: null, mfaLastUsedStep: null } });
     const { recoveryCodes } = await enableMfa(auth!, currentTotpCode(user.mfaSecretEncrypted!));
 
     const first = await login({ email: user.email, password: PASSWORD });

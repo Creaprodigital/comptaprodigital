@@ -20,7 +20,8 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "e2e:server": "prisma migrate deploy && tsx prisma/seed.ts && next build && next start -p 3100",
-    "jobs:daily": "tsx scripts/run-jobs.ts"
+    "jobs:daily": "tsx scripts/run-jobs.ts",
+    "keys:rotate": "tsx scripts/rotate-encryption-key.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",

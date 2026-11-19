@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { runRetentionPurges } from "../src/server/modules/retention/service";
 import { prisma } from "../src/server/db";
 import { purgeStaleSessions } from "../src/server/auth/session-store";
 import { purgeExpiredRateLimits } from "../src/server/security/rate-limit";
@@ -39,6 +40,8 @@ async function main() {
   const counters = await purgeExpiredRateLimits();
   const documents = await purgeDeletedDocuments();
   console.log(`Purges : ${sessions} session(s), ${counters} compteur(s) de débit, ${documents} document(s) supprimé(s) depuis plus de 30 jours`);
+  const retention = await runRetentionPurges();
+  console.log(`Conservation : ${Object.entries(retention).map(([k, v]) => `${k} ${v}`).join(", ")}`);
   // Dernière exécution, affichée dans la supervision de l'administration.
   await prisma.applicationSetting.upsert({ where: { key: "jobs.daily.last_run" }, create: { key: "jobs.daily.last_run", value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt }, description: "Dernière exécution des tâches quotidiennes" }, update: { value: { at: new Date().toISOString(), durationMs: Date.now() - startedAt } } });
   console.log(`Terminé en ${Date.now() - startedAt} ms`);

@@ -18,6 +18,14 @@ const envSchema = z
     APP_ENCRYPTION_KEY: z
       .string()
       .refine((v) => Buffer.from(v, "base64").length === 32, "APP_ENCRYPTION_KEY doit contenir 32 octets encodés en base64"),
+    /**
+     * Ancienne clé, uniquement pendant une rotation : les données encore chiffrées avec elle restent
+     * lisibles le temps que `npm run keys:rotate` les rechiffre avec APP_ENCRYPTION_KEY. À retirer ensuite.
+     */
+    APP_ENCRYPTION_KEY_PREVIOUS: z
+      .string()
+      .refine((v) => Buffer.from(v, "base64").length === 32, "APP_ENCRYPTION_KEY_PREVIOUS doit contenir 32 octets encodés en base64")
+      .optional(),
 
     SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     SESSION_IDLE_DAYS: z.coerce.number().int().min(1).max(90).default(14),
@@ -54,6 +62,9 @@ const envSchema = z
      * automatiques sans IA restent disponibles. ANTHROPIC_BASE_URL est lu directement par le SDK.
      */
     ANTHROPIC_API_KEY: z.string().optional(),
+    /** Antivirus facultatif : démon ClamAV (clamd) joignable en TCP. Sans hôte, les fichiers ne sont pas analysés. */
+    CLAMAV_HOST: z.string().optional(),
+    CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
     AI_MODEL: z.string().min(1).default("claude-opus-5-5"),
   })
   .superRefine((value, ctx) => {

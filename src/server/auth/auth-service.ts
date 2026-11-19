@@ -212,14 +212,26 @@ async function finalizeLogin(userId: string, meta: Meta): Promise<LoginResult> {
   return { status: "authenticated", token: session.token, expiresAt: session.expiresAt };
 }
 
+/** Réserve un pas de temps TOTP : échoue si ce pas (ou un pas plus récent) a déjà servi. */
+async function claimTotpStep(userId: string, step: number): Promise<boolean> {
+  const claimed = await prisma.user.updateMany({
+    where: { id: userId, OR: [{ mfaLastUsedStep: null }, { mfaLastUsedStep: { lt: step } }] },
+    data: { mfaLastUsedStep: step },
+  });
+  return claimed.count === 1;
+}
+
 /** Étape 2 de la connexion : code TOTP ou code de secours. La session provisoire est remplacée. */
 export async function completeMfaLogin(pending: AuthContext, code: string, meta: Meta = {}): Promise<LoginResult> {
   await enforceRateLimit(RATE_LIMITS.mfaVerify, `mfa:${pending.user.id}`);
   const user = await prisma.user.findUniqueOrThrow({ where: { id: pending.user.id } });
   if (!user.mfaEnabledAt || !user.mfaSecretEncrypted) throw errors.unauthenticated();
 
-  let valid = verifyTotpCode(user.mfaSecretEncrypted, code);
-  if (!valid) {
+  const step = verifyTotpCode(user.mfaSecretEncrypted, code);
+  // Anti-rejeu : le pas de temps n'est accepté qu'une fois (réservation atomique en base).
+  let valid = step !== null && (await claimTotpStep(user.id, step));
+  if (step !== null && !valid) await recordAudit({ action: "auth.mfa.replay_rejected", userId: user.id, ...meta });
+  if (!valid && step === null) {
     const claimed = await prisma.mfaRecoveryCode.updateMany({
       where: { userId: user.id, codeHash: hashRecoveryCode(code), usedAt: null },
       data: { usedAt: new Date() },
@@ -312,7 +324,8 @@ export async function enableMfa(auth: AuthContext, code: string, meta: Meta = {}
   const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } });
   if (user.mfaEnabledAt) throw errors.conflict("MFA_ALREADY_ENABLED", "La double authentification est déjà activée.");
   if (!user.mfaSecretEncrypted) throw errors.badRequest("MFA_NOT_INITIALIZED", "Commencez par générer un QR code.");
-  if (!verifyTotpCode(user.mfaSecretEncrypted, code)) {
+  const step = verifyTotpCode(user.mfaSecretEncrypted, code);
+  if (step === null || !(await claimTotpStep(user.id, step))) {
     throw errors.badRequest("INVALID_MFA_CODE", "Code de vérification incorrect.");
   }
   const { codes, hashes } = generateRecoveryCodes();
@@ -332,7 +345,7 @@ export async function disableMfa(auth: AuthContext, password: string, meta: Meta
     throw errors.badRequest("INVALID_PASSWORD", "Mot de passe incorrect.");
   }
   await prisma.$transaction([
-    prisma.user.update({ where: { id: user.id }, data: { mfaEnabledAt: null, mfaSecretEncrypted: null } }),
+    prisma.user.update({ where: { id: user.id }, data: { mfaEnabledAt: null, mfaSecretEncrypted: null, mfaLastUsedStep: null } }),
     prisma.mfaRecoveryCode.deleteMany({ where: { userId: user.id } }),
   ]);
   await recordAudit({ action: "auth.mfa.disabled", userId: user.id, ...meta });

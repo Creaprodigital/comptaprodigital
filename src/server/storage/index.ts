@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { env } from "@/server/env";
+import { encryptionKeys } from "@/server/security/crypto";
 
 /**
  * Stockage des fichiers (justificatifs, factures archivées).
@@ -126,26 +127,40 @@ export function setStorageForTests(instance: ObjectStorage | undefined) {
 
 const MAGIC = Buffer.from("CPD1");
 
-/** Clé dédiée aux fichiers, dérivée de la clé de l'application (distincte de celle des secrets en base). */
-function fileKey(): Buffer {
-  return Buffer.from(hkdfSync("sha256", Buffer.from(env().APP_ENCRYPTION_KEY, "base64"), Buffer.alloc(0), "comptapro:documents:v1", 32));
+/** Clés dédiées aux fichiers, dérivées des clés de l'application (distinctes de celles des secrets en base). */
+function fileKeys(): Buffer[] {
+  return encryptionKeys().map((k) => Buffer.from(hkdfSync("sha256", k, Buffer.alloc(0), "comptapro:documents:v1", 32)));
 }
 
 /** Format : « CPD1 » + IV (12 octets) + sceau (16 octets) + données chiffrées. La clé de l'objet est authentifiée. */
 export function encryptFile(key: string, plaintext: Buffer): Buffer {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", fileKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", fileKeys()[0], iv);
   cipher.setAAD(Buffer.from(key));
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   return Buffer.concat([MAGIC, iv, cipher.getAuthTag(), encrypted]);
 }
 
-export function decryptFile(key: string, payload: Buffer): Buffer {
+/** Déchiffre un objet et indique quelle clé a servi (0 = courante). */
+export function decryptFileWithKeyIndex(key: string, payload: Buffer): { plaintext: Buffer; keyIndex: number } {
   if (payload.length < 32 || !payload.subarray(0, 4).equals(MAGIC)) throw new Error("Fichier chiffré illisible");
-  const decipher = createDecipheriv("aes-256-gcm", fileKey(), payload.subarray(4, 16));
-  decipher.setAAD(Buffer.from(key));
-  decipher.setAuthTag(payload.subarray(16, 32));
-  return Buffer.concat([decipher.update(payload.subarray(32)), decipher.final()]);
+  const keys = fileKeys();
+  let lastError: unknown;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", keys[i], payload.subarray(4, 16));
+      decipher.setAAD(Buffer.from(key));
+      decipher.setAuthTag(payload.subarray(16, 32));
+      return { plaintext: Buffer.concat([decipher.update(payload.subarray(32)), decipher.final()]), keyIndex: i };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+export function decryptFile(key: string, payload: Buffer): Buffer {
+  return decryptFileWithKeyIndex(key, payload).plaintext;
 }
 
 export async function putEncrypted(key: string, plaintext: Buffer): Promise<void> {

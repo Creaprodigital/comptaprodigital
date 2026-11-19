@@ -1,4 +1,5 @@
 import type { Company } from "@prisma/client";
+import { assertFileIsSafe } from "@/server/security/antivirus";
 import { prisma } from "@/server/db";
 import { errors } from "@/server/http/errors";
 import { recordAudit } from "@/server/audit/audit";
@@ -121,6 +122,7 @@ export async function saveLogo(access: CompanyAccess, userId: string, input: { m
   if (!detected || detected !== input.mimeType) {
     throw errors.validation([{ path: "dataBase64", message: "Le fichier n'est pas une image PNG ou JPEG valide" }]);
   }
+  await assertFileIsSafe(data);
   await prisma.companyLogo.upsert({
     where: { companyId: access.company.id },
     create: { companyId: access.company.id, mimeType: detected, data, sizeBytes: data.length },

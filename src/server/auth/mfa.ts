@@ -22,12 +22,17 @@ export function generateMfaSecret(accountLabel: string): { secretBase32: string;
   return { secretBase32: secret.base32, encryptedSecret: encryptSecret(secret.base32), otpauthUrl: totp.toString() };
 }
 
-export function verifyTotpCode(encryptedSecret: string, code: string, at: Date = new Date()): boolean {
+/**
+ * Vérifie un code TOTP et retourne le pas de temps (période de 30 s) auquel il correspond,
+ * ou null. Le pas sert à refuser qu'un même code soit utilisé deux fois (voir claimTotpStep).
+ */
+export function verifyTotpCode(encryptedSecret: string, code: string, at: Date = new Date()): number | null {
   const normalized = code.replace(/\s+/g, "");
-  if (!/^\d{6}$/.test(normalized)) return false;
+  if (!/^\d{6}$/.test(normalized)) return null;
   const totp = buildTotp(decryptSecret(encryptedSecret), "verification");
   // Tolérance d'un pas (±30 s) pour absorber les décalages d'horloge.
-  return totp.validate({ token: normalized, window: 1, timestamp: at.getTime() }) !== null;
+  const delta = totp.validate({ token: normalized, window: 1, timestamp: at.getTime() });
+  return delta === null ? null : Math.floor(at.getTime() / 30_000) + delta;
 }
 
 /** Code TOTP courant — utilisé uniquement par les tests. */

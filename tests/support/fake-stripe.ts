@@ -121,6 +121,10 @@ export class FakeStripe {
     if (resource === "subscriptions" && id) {
       const sub = this.subscriptions.get(id);
       if (!sub) return notFound;
+      if (method === "DELETE") {
+        Object.assign(sub, { status: "canceled", canceled_at: Math.floor(Date.now() / 1000), ended_at: Math.floor(Date.now() / 1000) });
+        return [200, sub];
+      }
       if (method === "POST") {
         if (body.cancel_at_period_end !== undefined) sub.cancel_at_period_end = body.cancel_at_period_end === "true";
         if (body.metadata) sub.metadata = { ...(sub.metadata as Obj), ...(body.metadata as Obj) };

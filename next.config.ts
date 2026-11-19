@@ -3,8 +3,11 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV !== "production";
 
 /**
- * Politique de sécurité du contenu. Les scripts en ligne restent autorisés
- * (hydratation Next.js, thème) ; le durcissement par nonce est prévu en phase 8.
+ * Politique de sécurité du contenu. Les scripts en ligne restent autorisés : l'application
+ * repose sur le prérendu partiel (cacheComponents), incompatible avec une CSP par nonce
+ * (documentation Next.js, « Content Security Policy »). En compensation : intégrité des
+ * scripts (SRI, empreintes calculées au build), aucune source externe, aucun eval en
+ * production, et rapports de violation consignés côté serveur.
  */
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -17,6 +20,10 @@ const contentSecurityPolicy = [
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "report-uri /api/v1/csp-report",
+  "report-to csp",
 ].join("; ");
 
 const securityHeaders = [
@@ -26,6 +33,10 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  { key: "Reporting-Endpoints", value: 'csp="/api/v1/csp-report"' },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+  { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
 ];
 
 /**
@@ -49,6 +60,8 @@ const nextConfig: NextConfig = {
   experimental: {
     // Envoi de justificatifs (10 Mo au plus par fichier, contrôlé par l'API) : marge pour l'enveloppe multipart.
     proxyClientMaxBodySize: "12mb",
+    // Intégrité des scripts : empreinte SHA-256 de chaque fichier JavaScript, vérifiée par le navigateur.
+    sri: { algorithm: "sha256" },
   },
   turbopack: {
     rules: {

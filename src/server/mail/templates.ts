@@ -67,6 +67,18 @@ const euros = (amount: string) => `${amount.replace(".", ",")} €`;
 const longDate = (date: Date) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(date);
 
 export const mailTemplates = {
+  accountDeleted(to: string, firstName: string) {
+    return render({
+      to,
+      subject: `Votre compte a été supprimé — ${siteConfig.name}`,
+      greeting: `Bonjour ${firstName},`,
+      paragraphs: [
+        "Comme vous l'avez demandé, votre compte a été supprimé : vos données personnelles ont été effacées ou anonymisées, et vous ne pouvez plus vous connecter.",
+        "Les pièces et écritures comptables des entreprises que vous gériez sont conservées pendant la durée légale (dix ans), sans être accessibles, conformément aux obligations de conservation.",
+        "Si vous n'êtes pas à l'origine de cette demande, contactez-nous immédiatement en répondant à cet e-mail.",
+      ],
+    });
+  },
   adminTest(to: string) {
     return render({
       to,

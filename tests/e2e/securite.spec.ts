@@ -66,6 +66,17 @@ test.describe("sécurité de l'API et des pages", () => {
     expect(headers["content-security-policy"]).not.toContain("unsafe-eval");
     expect(headers["strict-transport-security"]).toContain("max-age=");
     expect(headers["x-powered-by"]).toBeUndefined();
+    expect(headers["content-security-policy"]).toContain("report-uri /api/v1/csp-report");
+    expect(headers["cross-origin-opener-policy"]).toBe("same-origin");
+    // Intégrité des scripts (SRI) : chaque script externe porte son empreinte.
+    const html = await home.text();
+    const scripts = [...html.matchAll(/<script[^>]+src="[^"]+"[^>]*>/g)].map((m) => m[0]);
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const tag of scripts) expect(tag).toMatch(/integrity="sha256-/);
+
+    // Les rapports de violation CSP sont acceptés et consignés.
+    const report = await api.post("/api/v1/csp-report", { headers: { "content-type": "application/csp-report" }, data: JSON.stringify({ "csp-report": { "document-uri": "http://localhost/app?secret=1", "violated-directive": "script-src", "blocked-uri": "https://malveillant.example/x.js" } }) });
+    expect(report.status()).toBe(204);
 
     const email = uniqueEmail("cookie");
     await createAccountViaApi(api, email);

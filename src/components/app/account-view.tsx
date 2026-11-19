@@ -16,6 +16,8 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PasswordChecklist, PasswordInput } from "@/components/auth/password-input";
 import { PageHeader } from "@/components/app/page-header";
+import { AccountDeletionCard } from "@/components/app/account-deletion";
+import type { DeletionCheck } from "@/server/modules/account/deletion";
 
 export type AccountProfile = { firstName: string; lastName: string; email: string; phone: string | null; mfaEnabled: boolean };
 export type AccountSession = { id: string; ipAddress: string | null; userAgent: string | null; createdAt: string; lastSeenAt: string; current: boolean };
@@ -386,10 +388,12 @@ export function AccountView({
   profile,
   sessions,
   subscription,
+  deletion,
 }: {
   profile: AccountProfile;
   sessions: AccountSession[];
   subscription: AccountSubscription;
+  deletion: DeletionCheck;
 }) {
   const status = subscription ? SUBSCRIPTION_STATUS[subscription.status] : null;
   return (
@@ -454,6 +458,7 @@ export function AccountView({
             </Button>
           </CardContent>
         </Card>
+        <AccountDeletionCard check={deletion} mfaEnabled={profile.mfaEnabled} />
       </div>
     </>
   );

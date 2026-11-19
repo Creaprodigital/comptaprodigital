@@ -49,7 +49,8 @@ const sections: LegalSection[] = [
     list: [
       "Compte utilisateur : pendant la durée de la relation contractuelle, puis suppression ou anonymisation après le délai de réversibilité.",
       "Pièces et écritures comptables : dix ans à compter de la clôture de l'exercice, conformément au Code de commerce.",
-      "Journaux de connexion et d'audit : douze mois, sauf obligation légale contraire.",
+      "Journaux de connexion : douze mois. Journal des modifications et des accès aux données : six ans.",
+      "Erreurs techniques : 90 jours. Jetons de vérification : 7 jours après usage ou expiration. Invitations : 90 jours. Notifications lues : 180 jours. Suivi d'usage de l'assistant IA : 13 mois.",
       "Demandes de contact : trois ans à compter du dernier échange.",
     ],
   },

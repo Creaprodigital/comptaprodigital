@@ -44,6 +44,8 @@ model User {
   termsAcceptedAt    DateTime?
   /// Secret TOTP chiffré (AES-256-GCM) — jamais stocké en clair.
   mfaSecretEncrypted String?    @db.VarChar(512)
+  /// Dernier pas de temps TOTP accepté : un code déjà utilisé ne peut pas resservir (anti-rejeu).
+  mfaLastUsedStep    Int?
   mfaEnabledAt       DateTime?
   failedLoginCount   Int        @default(0)
   lockedUntil        DateTime?

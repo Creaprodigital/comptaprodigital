@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/server/db";
 import { requireAuth } from "@/server/auth/guards";
 import { AccountView } from "@/components/app/account-view";
+import { deletionCheck } from "@/server/modules/account/deletion";
 
 export const metadata: Metadata = { title: "Compte et sécurité" };
 
@@ -9,7 +10,7 @@ type Props = { searchParams: Promise<{ mfa?: string }> };
 
 export default async function AccountPage({ searchParams }: Props) {
   const [auth, params] = await Promise.all([requireAuth(), searchParams]);
-  const [user, sessions, subscription] = await Promise.all([
+  const [user, sessions, subscription, deletion] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: auth.user.id },
       select: {
@@ -40,6 +41,7 @@ export default async function AccountPage({ searchParams }: Props) {
       where: { userId: auth.user.id },
       include: { plan: { select: { name: true } } },
     }),
+    deletionCheck(auth.user.id),
   ]);
 
   const adminNotice =
@@ -63,7 +65,8 @@ export default async function AccountPage({ searchParams }: Props) {
           phone: user.phone,
           mfaEnabled: user.mfaEnabledAt !== null,
         }}
-        sessions={sessions.map((s) => ({
+        deletion={deletion}
+      sessions={sessions.map((s) => ({
           id: s.id,
           ipAddress: s.ipAddress,
           userAgent: s.userAgent,

@@ -11,6 +11,7 @@ import { getDecrypted, putEncrypted, storage } from "@/server/storage";
 import { tenantDb } from "@/server/tenancy/tenant-db";
 import { refreshTransactionState } from "@/server/modules/bank/status";
 import { documentHistory, type HistoryEntry, type Meta } from "@/server/modules/invoicing/shared";
+import { assertFileIsSafe } from "@/server/security/antivirus";
 import { DOCUMENT_CATEGORY_LABELS, MAX_DOCUMENT_BYTES, formatFileSize } from "@/lib/bank";
 import { fromIsoDate, toIsoDate, formatIsoForHumans } from "@/lib/dates";
 import type { DocumentLinkInput, DocumentUpdateInput, DocumentsQuery } from "@/lib/schemas/bank";
@@ -215,6 +216,8 @@ export async function uploadDocument(access: CompanyAccess, userId: string, inpu
   if (input.link) await assertEntity(access, input.link);
 
   const checksum = sha256Hex(input.bytes);
+  // Analyse antivirus avant tout stockage (si un antivirus est configuré).
+  const scan = await assertFileIsSafe(input.bytes);
   const existing = await access.db.document.findFirst({ where: { checksumSha256: checksum, deletedAt: null } });
   let documentId: string;
   if (existing) {
@@ -248,7 +251,7 @@ export async function uploadDocument(access: CompanyAccess, userId: string, inpu
       companyId,
       entityType: "Document",
       entityId: documentId,
-      metadata: { detail: `Document ajouté (${formatFileSize(input.bytes.length)})`, checksum },
+      metadata: { detail: `Document ajouté (${formatFileSize(input.bytes.length)})${scan.status === "clean" ? ", analysé par l'antivirus" : ""}`, checksum },
       ...meta,
     });
   }
