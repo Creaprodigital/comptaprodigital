@@ -1062,10 +1062,17 @@ model BankTransaction {
   import      BankImport?          @relation(fields: [importId], references: [id], onDelete: SetNull)
   payments    Payment[]
 
-  @@index([companyId, date])
+  /// Liste paginée (tri date, création, identifiant) sans tri en mémoire.
+  @@index([companyId, date, createdAt, id])
   @@index([bankAccountId, date])
   @@index([bankAccountId, fingerprint])
   @@index([companyId, status])
+  /// Totaux encaissements / décaissements (index couvrant).
+  @@index([companyId, amount])
+  /// Compteurs « sans justificatif » et « non catégorisées » (contrôles, raccourcis).
+  @@index([companyId, documentCount, purchaseId, amount])
+  @@index([companyId, categoryId, date])
+  @@index([companyId, isDuplicateSuspect])
   @@index([categoryId])
   @@index([purchaseId])
   @@index([importId])

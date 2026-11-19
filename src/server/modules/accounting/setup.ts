@@ -6,6 +6,30 @@ import { companyHasModule } from "@/server/modules/plans/service";
 export type Tx = Prisma.TransactionClient;
 
 /**
+ * Cache de lectures limité à une transaction de synchronisation (activé explicitement par
+ * `enableSyncCache`) : journaux, comptes, exercices et comptes bancaires ne changent pas
+ * pendant une synchronisation, qui détient le verrou de l'entreprise. Hors synchronisation,
+ * aucune valeur n'est mise en cache.
+ */
+const syncCaches = new WeakMap<object, Map<string, Promise<unknown>>>();
+
+export function enableSyncCache(tx: Tx): void {
+  if (!syncCaches.has(tx)) syncCaches.set(tx, new Map());
+}
+
+/** Dépose une valeur déjà lue (préchargement d'un lot) dans le cache de la transaction. */
+export function seedMemo(tx: Tx, key: string, value: unknown): void {
+  syncCaches.get(tx)?.set(key, Promise.resolve(value));
+}
+
+export function memo<T>(tx: Tx, key: string, compute: () => Promise<T>): Promise<T> {
+  const cache = syncCaches.get(tx);
+  if (!cache) return compute();
+  if (!cache.has(key)) cache.set(key, compute());
+  return cache.get(key) as Promise<T>;
+}
+
+/**
  * La comptabilité en partie double concerne les entreprises qui tiennent une
  * comptabilité d'engagement et dont la formule inclut le module « accounting ».
  * Les micro-entreprises tiennent un livre des recettes (voir cash-book.ts).
@@ -65,6 +89,10 @@ export async function ensureBankJournals(tx: Tx, companyId: string): Promise<voi
 
 /** Identifiant d'un compte, créé à la volée s'il n'existe pas (compte d'une catégorie personnalisée, par exemple). */
 export async function ensureAccount(tx: Tx, companyId: string, number: string, label: string): Promise<string> {
+  return memo(tx, `account:${companyId}:${number}`, () => findOrCreateAccount(tx, companyId, number, label));
+}
+
+async function findOrCreateAccount(tx: Tx, companyId: string, number: string, label: string): Promise<string> {
   const found = await tx.accountingAccount.findUnique({ where: { companyId_number: { companyId, number } }, select: { id: true } });
   if (found) return found.id;
   const created = await tx.accountingAccount.upsert({

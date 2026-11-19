@@ -4,10 +4,10 @@ import { dec } from "@/lib/money";
 import { toIsoDate } from "@/lib/dates";
 import { insertEntry, lockCompany, type LineInput } from "./entries";
 import { postingDate } from "./fiscal-years";
-import { expectedEntryFor, type ExpectedEntry, type SourceRef } from "./postings";
+import { expectedEntryFor, SOURCE_INCLUDES, type ExpectedEntry, type SourceRef } from "./postings";
 import { REFERENCE_JOURNALS } from "@/config/chart-of-accounts";
 import { withTransactionRetry } from "@/server/modules/invoicing/shared";
-import { ensureAccountingSetup, isAccountingEnabled, type Tx } from "./setup";
+import { enableSyncCache, ensureAccountingSetup, isAccountingEnabled, seedMemo, type Tx } from "./setup";
 
 /**
  * Synchronisation des écritures automatiques avec leurs pièces.
@@ -48,15 +48,60 @@ function expectedSignature(expected: ExpectedEntry): string {
   return signature(expected.journalCode, expected.naturalDate, expected.lines);
 }
 
-/** Synchronise l'écriture d'une pièce (dans une transaction qui détient le verrou de l'entreprise). */
-export async function syncSource(tx: Tx, company: CompanyRef, ref: SourceRef): Promise<"unchanged" | "created" | "replaced" | "reversed" | "removed"> {
-  const companyId = company.id;
-  const expected = await expectedEntryFor(tx, company, ref);
-  const existing = (await tx.accountingEntry.findMany({
-    where: { companyId, sourceType: ref.type, sourceId: ref.id },
+/** Écritures existantes d'un lot de pièces, en une seule requête (clé : « type:id »). */
+async function prefetchEntries(tx: Tx, companyId: string, refs: SourceRef[]): Promise<Map<string, ExistingEntry[]>> {
+  const rows = (await tx.accountingEntry.findMany({
+    where: { companyId, sourceId: { in: [...new Set(refs.map((r) => r.id))] } },
     include: { ...lineInclude, journal: { select: { code: true } } },
     orderBy: { createdAt: "asc" },
   })) as ExistingEntry[];
+  const map = new Map<string, ExistingEntry[]>(refs.map((r) => [`${r.type}:${r.id}`, []]));
+  for (const row of rows) map.get(`${row.sourceType}:${row.sourceId}`)?.push(row);
+  return map;
+}
+
+/** Charge en une requête par type les pièces d'un lot (mêmes formes que postings.ts) et les dépose dans le cache. */
+async function preloadSources(tx: Tx, companyId: string, refs: SourceRef[]): Promise<void> {
+  const ids = (type: SourceRef["type"]) => refs.filter((r) => r.type === type).map((r) => r.id);
+  const [invoices, payments, purchases, transactions] = await Promise.all([
+    ids("INVOICE").length ? tx.invoice.findMany({ where: { companyId, id: { in: ids("INVOICE") } }, include: SOURCE_INCLUDES.INVOICE }) : [],
+    ids("PAYMENT").length ? tx.payment.findMany({ where: { companyId, id: { in: ids("PAYMENT") } }, include: SOURCE_INCLUDES.PAYMENT }) : [],
+    ids("PURCHASE").length ? tx.purchase.findMany({ where: { companyId, id: { in: ids("PURCHASE") } }, include: SOURCE_INCLUDES.PURCHASE }) : [],
+    ids("BANK_TRANSACTION").length ? tx.bankTransaction.findMany({ where: { companyId, id: { in: ids("BANK_TRANSACTION") } }, include: SOURCE_INCLUDES.BANK_TRANSACTION }) : [],
+  ]);
+  const seed = (type: SourceRef["type"], rows: Array<{ id: string }>) => {
+    const found = new Map(rows.map((row) => [row.id, row]));
+    // Pièce absente (supprimée) : `null`, comme le ferait findFirst.
+    for (const id of ids(type)) seedMemo(tx, `source:${type}:${id}`, found.get(id) ?? null);
+  };
+  seed("INVOICE", invoices);
+  seed("PAYMENT", payments);
+  seed("PURCHASE", purchases);
+  seed("BANK_TRANSACTION", transactions);
+}
+
+/** Synchronise un lot de pièces : cache de lectures de la transaction et écritures existantes préchargées. */
+async function syncChunk(tx: Tx, company: CompanyRef, chunk: SourceRef[]): Promise<number> {
+  enableSyncCache(tx);
+  // Une pièce n'est synchronisée qu'une fois par lot (les écritures préchargées seraient sinon périmées).
+  const refs = [...new Map(chunk.map((r) => [`${r.type}:${r.id}`, r])).values()];
+  const [existing] = await Promise.all([prefetchEntries(tx, company.id, refs), preloadSources(tx, company.id, refs)]);
+  let changed = 0;
+  for (const ref of refs) if ((await syncSource(tx, company, ref, existing.get(`${ref.type}:${ref.id}`))) !== "unchanged") changed++;
+  return changed;
+}
+
+/** Synchronise l'écriture d'une pièce (dans une transaction qui détient le verrou de l'entreprise). */
+export async function syncSource(tx: Tx, company: CompanyRef, ref: SourceRef, prefetched?: ExistingEntry[]): Promise<"unchanged" | "created" | "replaced" | "reversed" | "removed"> {
+  const companyId = company.id;
+  const expected = await expectedEntryFor(tx, company, ref);
+  const existing =
+    prefetched ??
+    ((await tx.accountingEntry.findMany({
+      where: { companyId, sourceType: ref.type, sourceId: ref.id },
+      include: { ...lineInclude, journal: { select: { code: true } } },
+      orderBy: { createdAt: "asc" },
+    })) as ExistingEntry[]);
 
   const drafts = existing.filter((e) => e.status === "DRAFT");
   const validated = existing.filter((e) => e.status === "VALIDATED");
@@ -119,7 +164,7 @@ export async function syncAccountingFor(company: CompanyRef, refs: SourceRef[]):
           async (tx) => {
             await lockCompany(tx, company.id);
             if (start === 0) fresh = await ensureAccountingSetup(tx, company.id);
-            for (const ref of chunk) await syncSource(tx, company, ref);
+            await syncChunk(tx, company, chunk);
           },
           { timeout: 120_000, maxWait: 20_000 },
         ),
@@ -181,9 +226,7 @@ export async function resyncAll(company: CompanyRef): Promise<{ examined: number
         async (tx) => {
           await lockCompany(tx, company.id);
           if (start === 0) await ensureAccountingSetup(tx, company.id);
-          let count = 0;
-          for (const ref of chunk) if ((await syncSource(tx, company, ref)) !== "unchanged") count++;
-          return count;
+          return syncChunk(tx, company, chunk);
         },
         { timeout: 180_000, maxWait: 20_000 },
       ),

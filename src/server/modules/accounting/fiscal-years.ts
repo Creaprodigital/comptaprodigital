@@ -1,4 +1,5 @@
 import type { FiscalYear } from "@prisma/client";
+import { memo } from "./setup";
 import { errors } from "@/server/http/errors";
 import { fiscalYearBounds } from "@/server/modules/companies/fiscal-year";
 import { addDays, fromIsoDate, toIsoDate, type IsoDate } from "@/lib/dates";
@@ -6,6 +7,10 @@ import type { Tx } from "./setup";
 
 /** Exercice contenant une date ; créé s'il n'existe pas encore (mêmes bornes que les exercices de l'entreprise). */
 export async function fiscalYearFor(tx: Tx, company: { id: string; fiscalYearStartMonth: number }, date: IsoDate): Promise<FiscalYear> {
+  return memo(tx, `fiscal-year:${company.id}:${date}`, () => resolveFiscalYear(tx, company, date));
+}
+
+async function resolveFiscalYear(tx: Tx, company: { id: string; fiscalYearStartMonth: number }, date: IsoDate): Promise<FiscalYear> {
   const found = await tx.fiscalYear.findFirst({ where: { companyId: company.id, startDate: { lte: fromIsoDate(date) }, endDate: { gte: fromIsoDate(date) } } });
   if (found) return found;
   // Les exercices existants fixent le calendrier ; à défaut, le mois d'ouverture de l'entreprise.

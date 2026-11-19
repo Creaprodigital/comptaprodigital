@@ -8,7 +8,7 @@ import type { Meta } from "@/server/modules/invoicing/shared";
 import { checkEntryLines } from "@/lib/accounting";
 import { dec, toMoneyString, ZERO } from "@/lib/money";
 import { formatIsoForHumans, fromIsoDate, toIsoDate, todayInParis, type IsoDate } from "@/lib/dates";
-import { ensureAccount, type Tx } from "./setup";
+import { ensureAccount, type Tx, memo } from "./setup";
 import { fiscalYearFor, isOpenFor } from "./fiscal-years";
 
 /**
@@ -56,7 +56,7 @@ export type EntryRow = Prisma.AccountingEntryGetPayload<{ include: typeof entryI
 /** Insère une écriture et ses lignes (les comptes absents sont créés à partir de leur libellé). */
 export async function insertEntry(tx: Tx, company: { id: string; fiscalYearStartMonth: number }, input: EntryWrite, options: InsertOptions = {}): Promise<AccountingEntry> {
   const companyId = company.id;
-  const journal = await tx.accountingJournal.findUnique({ where: { companyId_code: { companyId, code: input.journalCode } } });
+  const journal = await memo(tx, `journal:${companyId}:${input.journalCode}`, () => tx.accountingJournal.findUnique({ where: { companyId_code: { companyId, code: input.journalCode } } }));
   if (!journal) throw errors.validation([{ path: "journalId", message: "Journal introuvable" }]);
   const fiscalYear = await fiscalYearFor(tx, company, input.date);
   const lines: Prisma.AccountingEntryLineCreateManyEntryInput[] = [];

@@ -51,47 +51,48 @@ export async function runControls(access: CompanyAccess): Promise<ControlFinding
   const findings: ControlFinding[] = [];
 
   if (bank && can("bank:read")) {
-    const [duplicates, missing, uncategorized] = await Promise.all([
-      access.db.bankTransaction.findMany({ where: { isDuplicateSuspect: true }, select: { id: true, date: true, label: true, amount: true }, orderBy: { date: "desc" } }),
-      documents
-        ? access.db.bankTransaction.findMany({
-            where: { amount: { lt: 0 }, documentCount: 0, purchaseId: null, date: { lte: daysAgo(7) } },
-            select: { id: true, date: true, label: true, amount: true, category: { select: { name: true, accountNumber: true } } },
-            orderBy: { amount: "asc" },
-          })
-        : Promise.resolve([]),
-      access.db.bankTransaction.findMany({ where: { categoryId: null, date: { lte: daysAgo(30) } }, select: { id: true, date: true, label: true, amount: true }, orderBy: { date: "asc" } }),
+    // Comptages et totaux en base ; seuls les éléments affichés sont chargés.
+    const missingWhere = { amount: { lt: 0 }, documentCount: 0, purchaseId: null, date: { lte: daysAgo(7) } };
+    const uncategorizedWhere = { categoryId: null, date: { lte: daysAgo(30) } };
+    const select = { id: true, date: true, label: true, amount: true } as const;
+    const [duplicates, duplicateCount, missing, missingCount, missingTotal, uncategorized, uncategorizedCount] = await Promise.all([
+      access.db.bankTransaction.findMany({ where: { isDuplicateSuspect: true }, select, orderBy: { date: "desc" }, take: MAX_ITEMS }),
+      access.db.bankTransaction.count({ where: { isDuplicateSuspect: true } }),
+      documents ? access.db.bankTransaction.findMany({ where: missingWhere, select: { ...select, category: { select: { name: true } } }, orderBy: { amount: "asc" }, take: MAX_ITEMS }) : Promise.resolve([]),
+      documents ? access.db.bankTransaction.count({ where: missingWhere }) : Promise.resolve(0),
+      documents ? access.db.bankTransaction.aggregate({ where: missingWhere, _sum: { amount: true } }) : Promise.resolve({ _sum: { amount: null } }),
+      access.db.bankTransaction.findMany({ where: uncategorizedWhere, select, orderBy: { date: "asc" }, take: MAX_ITEMS }),
+      access.db.bankTransaction.count({ where: uncategorizedWhere }),
     ]);
-    if (duplicates.length) {
+    if (duplicateCount) {
       findings.push({
         code: "BANK_DUPLICATES",
         severity: "warning",
         title: "Opérations bancaires en double possible",
         detail: "Même date, même montant et même libellé qu'une autre opération : vérifiez qu'il ne s'agit pas d'un relevé importé deux fois.",
-        count: duplicates.length,
-        items: duplicates.slice(0, MAX_ITEMS).map((t) => ({ label: t.label, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
+        count: duplicateCount,
+        items: duplicates.map((t) => ({ label: t.label, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
       });
     }
     // Les salaires, impôts et cotisations n'ont pas de facture : ils restent signalés, la personne juge.
-    if (missing.length) {
-      const total = missing.reduce((acc, t) => acc.plus(t.amount), new Decimal(0));
+    if (missingCount) {
       findings.push({
         code: "MISSING_RECEIPTS",
         severity: "warning",
         title: "Dépenses sans justificatif",
-        detail: `${missing.length} décaissement(s) de plus de 7 jours sans pièce jointe ni facture d'achat associée, pour ${money(total.abs())} € au total.`,
-        count: missing.length,
-        items: missing.slice(0, MAX_ITEMS).map((t) => ({ label: `${t.label}${t.category ? ` (${t.category.name})` : ""}`, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
+        detail: `${missingCount} décaissement(s) de plus de 7 jours sans pièce jointe ni facture d'achat associée, pour ${money(new Decimal(missingTotal._sum.amount ?? 0).abs())} € au total.`,
+        count: missingCount,
+        items: missing.map((t) => ({ label: `${t.label}${t.category ? ` (${t.category.name})` : ""}`, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
       });
     }
-    if (uncategorized.length) {
+    if (uncategorizedCount) {
       findings.push({
         code: "UNCATEGORIZED",
         severity: "info",
         title: "Opérations non catégorisées depuis plus de 30 jours",
         detail: "Elles ne sont pas reprises dans les indicateurs par catégorie ni dans les écritures comptables tant qu'elles ne sont pas catégorisées.",
-        count: uncategorized.length,
-        items: uncategorized.slice(0, MAX_ITEMS).map((t) => ({ label: t.label, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
+        count: uncategorizedCount,
+        items: uncategorized.map((t) => ({ label: t.label, date: toIsoDate(t.date), amount: money(t.amount), href: `/app/banque/operations/${t.id}` })),
       });
     }
   }

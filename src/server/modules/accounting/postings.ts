@@ -1,10 +1,11 @@
-import type { Company, Customer, EntrySource, Supplier } from "@prisma/client";
+import type { Company, Customer, EntrySource, Prisma, Supplier } from "@prisma/client";
 import Decimal from "decimal.js";
 import { ACCOUNTS } from "@/config/chart-of-accounts";
 import { dec, sum, vatShareOfPayment, ZERO } from "@/lib/money";
 import { toIsoDate, type IsoDate } from "@/lib/dates";
 import type { LineInput } from "./entries";
 import type { Tx } from "./setup";
+import { memo } from "./setup";
 import {
   bankRemainder,
   bankRemainderVat,
@@ -67,8 +68,26 @@ function compact(lines: LineInput[]): LineInput[] {
 }
 
 /** Compte auxiliaire d'un client (C00001…), attribué à la première écriture. */
+/** Formes de chargement des pièces, partagées avec le préchargement par lot (sync.ts). */
+export const SOURCE_INCLUDES = {
+  INVOICE: { customer: true, items: { include: { product: { select: { accountNumber: true, type: true } } }, orderBy: { position: "asc" } } },
+  PAYMENT: { invoice: { include: { customer: true, items: { select: { description: true, quantity: true, unitPriceExclTax: true, discountRate: true, vatRate: true, totalExclTax: true } } } }, bankTransaction: { select: { bankAccountId: true } } },
+  PURCHASE: { supplier: true, category: { select: { accountNumber: true, name: true } } },
+  BANK_TRANSACTION: {
+    payments: { select: { amount: true } },
+    category: { select: { accountNumber: true, name: true, kind: true } },
+    purchase: { include: { supplier: true, category: { select: { accountNumber: true } } } },
+    bankAccount: { select: { openingBalanceDate: true } },
+  },
+} as const satisfies { INVOICE: Prisma.InvoiceInclude; PAYMENT: Prisma.PaymentInclude; PURCHASE: Prisma.PurchaseInclude; BANK_TRANSACTION: Prisma.BankTransactionInclude };
+
 async function customerAux(tx: Tx, companyId: string, customer: Pick<Customer, "id" | "name" | "accountNumber">) {
   if (customer.accountNumber) return { number: customer.accountNumber, label: customer.name };
+  // Pendant une synchronisation, le numéro attribué est réutilisé pour les pièces suivantes du même client.
+  return memo(tx, `aux:customer:${customer.id}`, () => assignCustomerAux(tx, companyId, customer));
+}
+
+async function assignCustomerAux(tx: Tx, companyId: string, customer: Pick<Customer, "id" | "name" | "accountNumber">) {
   const number = await nextAuxNumber(tx, companyId, "C");
   await tx.customer.update({ where: { id: customer.id }, data: { accountNumber: number } });
   return { number, label: customer.name };
@@ -77,6 +96,10 @@ async function customerAux(tx: Tx, companyId: string, customer: Pick<Customer, "
 async function supplierAux(tx: Tx, companyId: string, supplier: Pick<Supplier, "id" | "name" | "accountNumber"> | null) {
   if (!supplier) return { number: "FDIVERS", label: "Fournisseurs divers" };
   if (supplier.accountNumber) return { number: supplier.accountNumber, label: supplier.name };
+  return memo(tx, `aux:supplier:${supplier.id}`, () => assignSupplierAux(tx, companyId, supplier));
+}
+
+async function assignSupplierAux(tx: Tx, companyId: string, supplier: Pick<Supplier, "id" | "name" | "accountNumber">) {
   const number = await nextAuxNumber(tx, companyId, "F");
   await tx.supplier.update({ where: { id: supplier.id }, data: { accountNumber: number } });
   return { number, label: supplier.name };
@@ -93,6 +116,10 @@ async function nextAuxNumber(tx: Tx, companyId: string, prefix: "C" | "F"): Prom
 
 /** Journal et compte de trésorerie d'un compte bancaire. */
 async function bankLedger(tx: Tx, companyId: string, bankAccountId: string): Promise<{ journalCode: string; account: string }> {
+  return memo(tx, `bank-ledger:${companyId}:${bankAccountId}`, () => resolveBankLedger(tx, companyId, bankAccountId));
+}
+
+async function resolveBankLedger(tx: Tx, companyId: string, bankAccountId: string): Promise<{ journalCode: string; account: string }> {
   const journal = await tx.accountingJournal.findFirst({ where: { companyId, bankAccountId }, select: { code: true } });
   const account = await tx.bankAccount.findFirst({ where: { id: bankAccountId, companyId }, select: { accountNumber: true } });
   return { journalCode: journal?.code ?? "OD", account: account?.accountNumber ?? ACCOUNTS.bank };
@@ -101,10 +128,7 @@ async function bankLedger(tx: Tx, companyId: string, bankAccountId: string): Pro
 // --- Factures et avoirs -----------------------------------------------------------------
 
 async function invoiceEntry(tx: Tx, company: CompanyRef, invoiceId: string): Promise<ExpectedEntry | null> {
-  const invoice = await tx.invoice.findFirst({
-    where: { id: invoiceId, companyId: company.id },
-    include: { customer: true, items: { include: { product: { select: { accountNumber: true, type: true } } }, orderBy: { position: "asc" } } },
-  });
+  const invoice = await memo(tx, `source:INVOICE:${invoiceId}`, () => tx.invoice.findFirst({ where: { id: invoiceId, companyId: company.id }, include: SOURCE_INCLUDES.INVOICE }));
   if (!invoice || invoice.status === "DRAFT" || invoice.status === "CANCELLED" || !invoice.number || !invoice.issueDate) return null;
   const aux = await customerAux(tx, company.id, invoice.customer);
   const isCredit = invoice.type === "CREDIT_NOTE";
@@ -156,10 +180,7 @@ export async function creditNoteSplit(tx: Tx, companyId: string, creditNote: { i
 // --- Règlements clients ------------------------------------------------------------------
 
 async function paymentEntry(tx: Tx, company: CompanyRef, paymentId: string): Promise<ExpectedEntry | null> {
-  const payment = await tx.payment.findFirst({
-    where: { id: paymentId, companyId: company.id },
-    include: { invoice: { include: { customer: true, items: { select: { description: true, quantity: true, unitPriceExclTax: true, discountRate: true, vatRate: true, totalExclTax: true } } } }, bankTransaction: { select: { bankAccountId: true } } },
-  });
+  const payment = await memo(tx, `source:PAYMENT:${paymentId}`, () => tx.payment.findFirst({ where: { id: paymentId, companyId: company.id }, include: SOURCE_INCLUDES.PAYMENT }));
   if (!payment) return null;
   const invoice = payment.invoice;
   const number = invoice.number;
@@ -189,7 +210,7 @@ async function paymentEntry(tx: Tx, company: CompanyRef, paymentId: string): Pro
 // --- Achats -----------------------------------------------------------------------------
 
 async function purchaseEntry(tx: Tx, company: CompanyRef, purchaseId: string): Promise<ExpectedEntry | null> {
-  const purchase = await tx.purchase.findFirst({ where: { id: purchaseId, companyId: company.id }, include: { supplier: true, category: { select: { accountNumber: true, name: true } } } });
+  const purchase = await memo(tx, `source:PURCHASE:${purchaseId}`, () => tx.purchase.findFirst({ where: { id: purchaseId, companyId: company.id }, include: SOURCE_INCLUDES.PURCHASE }));
   if (!purchase || purchase.status === "DRAFT" || purchase.status === "CANCELLED") return null;
   const aux = await supplierAux(tx, company.id, purchase.supplier);
   const expense = purchase.category?.accountNumber ?? ACCOUNTS.suspense;
@@ -207,15 +228,7 @@ async function purchaseEntry(tx: Tx, company: CompanyRef, purchaseId: string): P
 // --- Opérations bancaires -----------------------------------------------------------------
 
 async function bankTransactionEntry(tx: Tx, company: CompanyRef, transactionId: string): Promise<ExpectedEntry | null> {
-  const transaction = await tx.bankTransaction.findFirst({
-    where: { id: transactionId, companyId: company.id },
-    include: {
-      payments: { select: { amount: true } },
-      category: { select: { accountNumber: true, name: true, kind: true } },
-      purchase: { include: { supplier: true, category: { select: { accountNumber: true } } } },
-      bankAccount: { select: { openingBalanceDate: true } },
-    },
-  });
+  const transaction = await memo(tx, `source:BANK_TRANSACTION:${transactionId}`, () => tx.bankTransaction.findFirst({ where: { id: transactionId, companyId: company.id }, include: SOURCE_INCLUDES.BANK_TRANSACTION }));
   if (!transaction) return null;
   // Opérations antérieures au solde d'ouverture : déjà comprises dans ce solde.
   if (transaction.bankAccount.openingBalanceDate && transaction.date < transaction.bankAccount.openingBalanceDate) return null;

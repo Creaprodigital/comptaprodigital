@@ -25,7 +25,7 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ value?: T; ms: number; 
 
 async function databaseCheck(): Promise<Check & { migrations: number; lastMigration: string | null }> {
   const ping = await timed(() => prisma.$queryRaw`SELECT 1`);
-  const migrations = await timed(() => prisma.$queryRaw<{ migration_name: string; finished_at: Date | null }[]>`SELECT migration_name, finished_at FROM _prisma_migrations ORDER BY started_at DESC`);
+  const migrations = await timed(() => prisma.$queryRaw<{ migration_name: string; finished_at: Date | null }[]>`SELECT migration_name, finished_at FROM _prisma_migrations WHERE rolled_back_at IS NULL ORDER BY started_at DESC`);
   const rows = migrations.value ?? [];
   const pending = rows.filter((r) => !r.finished_at).length;
   return {
