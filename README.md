@@ -17,7 +17,7 @@ comptabilité, TVA, documents, abonnements et administration.
 | 3 | Clients, produits, devis, factures | ✅ Livrée |
 | 4 | Banque, transactions, justificatifs | ✅ Livrée |
 | 5 | Moteur comptable, journaux, TVA, exports | ✅ Livrée |
-| 6 | Stripe et super administration | ⏳ À venir (schéma en place) |
+| 6 | Stripe et super administration | ✅ Livrée |
 | 7 | Automatisations, IA, intégrations | ⏳ À venir |
 | 8 | Durcissement sécurité, optimisation, déploiement | 🔶 Socle en place (Docker, CI, sauvegardes) |
 
@@ -53,6 +53,16 @@ Ce qui fonctionne réellement aujourd'hui :
   la CA3, validation, indication du dépôt, crédit reporté, écriture de liquidation, contrôle de concordance avec la
   comptabilité, simulation et acomptes, export. **Aucune télétransmission** : la déclaration se dépose sur l'espace
   professionnel. Les opérations intracommunautaires, l'autoliquidation et le prorata de déduction ne sont pas gérés.
+- **Abonnements** — formules Starter, Pro, Business configurables (prix, essai, limites, modules), paiement
+  mensuel ou annuel par Stripe Checkout, portail client Stripe, changement de formule au prorata, résiliation en
+  fin de période, historique et factures d'abonnement, webhooks signés et idempotents, délai de grâce en cas
+  d'impayé puis passage en lecture seule (données toujours consultables et exportables), rappels de fin d'essai.
+- **Support** — demandes depuis l'espace client, réponses par e-mail et dans l'application.
+- **Super administration** (`/admin`, double authentification obligatoire) — MRR, ARR et encaissements, comptes,
+  entreprises, abonnements, formules synchronisées avec Stripe, support, annonces, e-mails, supervision des
+  intégrations, erreurs applicatives, journal d'audit exportable, paramètres globaux. Aucun accès implicite aux
+  données financières des clients : accès justifié, limité dans le temps, notifié au titulaire, révocable et
+  journalisé à chaque consultation.
 
 ## Pile technique
 

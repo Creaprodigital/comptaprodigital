@@ -34,7 +34,11 @@
 | Relevés importés | Taille bornée, analyse sans résolution d'entités XML externes, règles sans expressions régulières | `tests/unit/bank-parsers.test.ts` |
 | Documents | Type vérifié par signature (PDF, JPEG, PNG), 10 Mo maximum, chiffrement applicatif AES-256-GCM avant stockage, accès uniquement par l'API après contrôle des droits, téléchargements journalisés | intégration, e2e |
 | Aperçu des documents | Servi avec `nosniff` et une CSP `default-src 'none'`, affichable uniquement dans un cadre de la même origine | e2e |
-| Super administrateur | Aucun accès implicite aux données des entreprises | intégration |
+| Super administrateur | Double authentification obligatoire ; 404 pour les autres comptes (proxy, pages, API) | intégration, e2e |
+| Données des clients | Aucun accès implicite : accès justifié, borné, notifié, révocable, chaque consultation journalisée | intégration, e2e |
+| Suspension | Compte suspendu : sessions révoquées, connexion refusée ; entreprise suspendue : accès refusé | intégration |
+| Webhooks Stripe | Signature vérifiée sur le corps brut, tolérance 5 min, idempotence, corps limité à 1 Mo | intégration |
+| Export du journal d'audit | Cellules neutralisées contre l'injection de formules (CSV) | intégration |
 
 ## Limites connues et travaux restants (phase 8)
 
@@ -56,6 +60,9 @@
 - **Antivirus des pièces jointes** : non intégré. Les fichiers ne sont jamais exécutés ni interprétés par le
   serveur, mais un document téléchargé par un utilisateur peut contenir un contenu malveillant pour son poste.
 - **Journalisation centralisée, alertes** : à traiter avec la supervision.
+- **Super administrateurs** : désignés uniquement par le seed (`SEED_ADMIN_EMAIL`) ou en base ; pas de gestion
+  des comptes administrateurs depuis l'interface. Limitez leur nombre et activez leur double authentification
+  avant toute utilisation.
 
 ## RGPD
 

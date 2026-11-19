@@ -176,6 +176,22 @@ Les factures récurrentes et les relances automatiques sont produites par une t�
 Sans cette planification, les récurrences ne génèrent aucune facture et aucune relance automatique ne part ; les
 relances manuelles restent disponibles depuis chaque facture.
 
+### Abonnements Stripe
+
+1. Dans le tableau de bord Stripe (mode test d'abord), copiez la clé secrète dans `STRIPE_SECRET_KEY`.
+2. Créez un point de terminaison webhook vers `https://<APP_DOMAIN>/api/v1/stripe/webhook` avec les événements
+   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `invoice.paid`,
+   `invoice.payment_failed`, `invoice.finalized`, `invoice.voided`, `invoice.marked_uncollectible`, puis copiez
+   son secret de signature dans `STRIPE_WEBHOOK_SECRET`.
+3. Activez le portail client Stripe (changement de moyen de paiement, factures).
+4. Redémarrez l'application, puis dans `/admin/formules`, cliquez « Synchroniser avec Stripe » pour chaque formule.
+   `/admin/integrations` doit indiquer Stripe opérationnel ; le dernier événement reçu y apparaît.
+5. Passez en clés `sk_live_…` et créez le webhook de production une fois les essais concluants.
+
+Sans clé Stripe, les comptes restent en période d'essai : rien n'est facturé ni restreint (`billing.enforcement`
+« auto »).
+
 ## 7. Mises à jour
 
 Manuellement :

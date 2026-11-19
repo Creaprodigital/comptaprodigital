@@ -288,6 +288,33 @@ selon le régime, prépare la déclaration (instantané des montants, repères C
 période suivante. Une modification ultérieure des opérations est signalée sans toucher à la déclaration validée.
 Le tableau de bord utilise le même calcul. Rien n'est transmis à l'administration.
 
+## Abonnements (Stripe)
+
+- Formules en base (`subscription_plans`) : prix HT, essai, arguments, limites (`maxCompanies`, `maxMembers`,
+  `modules`). Modifiables depuis `/admin/formules` ; la synchronisation crée le produit et des prix Stripe (un prix
+  étant immuable, un nouveau tarif crée un nouveau prix et archive l'ancien ; les abonnés existants le conservent).
+- Souscription par Stripe Checkout (`/api/v1/me/billing/checkout`), retour confirmé par
+  `/me/billing/complete`, puis tenue à jour par webhook (`/api/v1/stripe/webhook`) : signature vérifiée sur le
+  corps brut, tolérance de 5 minutes, idempotence par la table `stripe_events`, réémission sûre en cas d'échec.
+- Situation d'un compte (`src/server/billing/standing.ts`) : essai, actif, délai de grâce (impayé) ou inactif.
+  Inactif ⇒ entreprises en lecture seule : toute permission mutatrice renvoie 402 `SUBSCRIPTION_INACTIVE`, la
+  consultation et les exports restent possibles. Paramètre `billing.enforcement` (auto : appliqué seulement si
+  Stripe est configuré).
+- Tâche quotidienne : rappel avant la fin de l'essai, expiration des essais sans abonnement.
+
+## Super administration
+
+- Espace `/admin` et API `/api/v1/admin/*` (`adminRoute`) : super administrateur **et** double authentification.
+  Pour tout autre compte, l'espace n'existe pas : 404 dès le proxy, puis contrôles répétés dans les pages et l'API.
+- Services dans `src/server/modules/admin/*` : indicateurs (MRR = Σ abonnements actifs ou en impayé ramenés au
+  mois, prix annuel / 12, prix réellement facturé si connu ; ARR = MRR × 12), comptes, entreprises, accès
+  justifiés, formules, erreurs, audit, intégrations, annonces, paramètres.
+- Aucune donnée financière d'entreprise dans les vues d'administration. Pour instruire une demande, un accès
+  justifié (`admin_data_access_grants`) : motif ≥ 20 caractères, durée ≤ `admin.access_grant_max_hours`,
+  personnel à l'administrateur, notification et e-mail au titulaire, révocable par lui depuis Équipe et accès,
+  synthèse en lecture seule, chaque affichage inscrit au journal (`admin.financial_data_view`).
+- Toutes les actions d'administration sont journalisées avec `actorType = SUPER_ADMIN`.
+
 ## Rendu et cache (Next.js 16)
 
 Le projet utilise **Cache Components** : rien n'est mis en cache sans directive explicite. Le site vitrine est
@@ -337,6 +364,6 @@ Implémentées dans `src/server/modules/dashboard/service.ts` et vérifiées au 
 Chaque phase suit le même déroulé : architecture, fichiers, implémentation réelle, migrations, tests, corrections,
 documentation des variables d'environnement, commit.
 
-- **Phase 6** — abonnements Stripe (webhooks vérifiés, idempotence) et super administration.
+- **Phase 6** — ✅ abonnements Stripe et super administration.
 - **Phase 7** — automatisations, assistant IA (suggestions soumises à validation), intégrations.
 - **Phase 8** — durcissement (CSP par nonce, tests de charge, supervision), optimisation, mise en production.
