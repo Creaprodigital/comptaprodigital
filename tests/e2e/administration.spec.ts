@@ -52,7 +52,8 @@ test("administration : accès réservé, support, accès justifié notifié, ann
   await test.step("réponse à une demande de support", async () => {
     await page.getByRole("navigation", { name: "Navigation de l'administration" }).getByRole("link", { name: "Support" }).click();
     await page.getByRole("link", { name: subject }).click();
-    await expect(page.getByText(ticketRef)).toBeVisible();
+    await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+    await expect(page.getByText(`${ticketRef} · Test E2E`)).toBeVisible();
     await page.getByLabel("Votre réponse").fill("Nous avons identifié une facture enregistrée deux fois ; vous pouvez l'annuler par un avoir.");
     await page.getByRole("button", { name: "Envoyer" }).click();
     await expect(page.getByText("Réponse envoyée au demandeur.")).toBeVisible();

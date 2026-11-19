@@ -58,6 +58,9 @@ export default async function AdminIntegrationsPage() {
         </Block>
         <Block title="E-mails (SMTP)" check={s.smtp} />
         <Block title="Stockage des documents" check={s.storage} />
+        <Block title="Assistant IA (Anthropic)" check={s.ai}>
+          <p className="text-muted-foreground">30 derniers jours : {s.ai.requests30d} requête(s), {s.ai.tokens30d.toLocaleString("fr-FR")} jetons, {s.ai.errors30d} erreur(s)</p>
+        </Block>
         <Block title="Annuaire des entreprises (Sirene)" check={s.insee} />
         <Block title="Tâches quotidiennes" check={s.dailyJobs} />
       </div>

@@ -24,6 +24,12 @@ export class FakeAnthropic {
       req.on("end", () => {
         const body = raw ? (JSON.parse(raw) as Obj) : {};
         this.requests.push({ path: new URL(req.url ?? "/", "http://localhost").pathname, headers: req.headers, body });
+        if (req.method === "GET" && req.url?.startsWith("/v1/models/")) {
+          const id = decodeURIComponent(req.url.slice("/v1/models/".length));
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ type: "model", id, display_name: id, created_at: "2026-01-01T00:00:00Z" }));
+          return;
+        }
         const responder = this.queue.shift();
         if (!responder) {
           res.writeHead(500, { "Content-Type": "application/json" });

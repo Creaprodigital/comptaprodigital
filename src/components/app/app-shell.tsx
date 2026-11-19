@@ -18,6 +18,8 @@ import {
   ShoppingCartIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
+  ListChecksIcon,
+  SparklesIcon,
   LogOutIcon,
   MenuIcon,
   PackageIcon,
@@ -51,13 +53,17 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 export type ShellUser = { firstName: string; lastName: string; email: string };
 export type ShellCompany = { id: string; name: string; roleName: string };
 
-type NavItem = { label: string; href: string; icon: LucideIcon; requiresCompany?: boolean };
+type NavItem = { label: string; href: string; icon: LucideIcon; requiresCompany?: boolean; requiresAi?: boolean };
 type NavGroup = { title: string; items: NavItem[] };
 
 const NAV: NavGroup[] = [
   {
     title: "Pilotage",
-    items: [{ label: "Tableau de bord", href: "/app/tableau-de-bord", icon: LayoutDashboardIcon, requiresCompany: true }],
+    items: [
+      { label: "Tableau de bord", href: "/app/tableau-de-bord", icon: LayoutDashboardIcon, requiresCompany: true },
+      { label: "Assistant", href: "/app/assistant", icon: SparklesIcon, requiresCompany: true, requiresAi: true },
+      { label: "Contrôles", href: "/app/controles", icon: ListChecksIcon, requiresCompany: true },
+    ],
   },
   {
     title: "Facturation",
@@ -165,11 +171,13 @@ function SidebarContent({
   companies,
   activeId,
   isSuperAdmin,
+  aiAvailable,
   onNavigate,
 }: {
   companies: ShellCompany[];
   activeId: string | null;
   isSuperAdmin?: boolean;
+  aiAvailable?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -191,7 +199,7 @@ function SidebarContent({
             <p className="px-3 text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase">{group.title}</p>
             <ul className="mt-2 grid gap-0.5">
               {group.items
-                .filter((item) => hasCompany || !item.requiresCompany)
+                .filter((item) => (hasCompany || !item.requiresCompany) && (aiAvailable || !item.requiresAi))
                 .map((item) => {
                   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -234,6 +242,7 @@ export function AppShell({
   companies,
   activeCompanyId,
   isSuperAdmin = false,
+  aiAvailable = false,
   banners,
   children,
 }: {
@@ -241,6 +250,7 @@ export function AppShell({
   companies: ShellCompany[];
   activeCompanyId: string | null;
   isSuperAdmin?: boolean;
+  aiAvailable?: boolean;
   banners?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -249,7 +259,7 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-1">
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 lg:block">
-        <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} />
+        <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} aiAvailable={aiAvailable} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -263,7 +273,7 @@ export function AppShell({
             <SheetContent side="left" className="text-white">
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <SheetDescription className="sr-only">Navigation de l'espace client</SheetDescription>
-              <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} onNavigate={() => setMobileOpen(false)} />
+              <SidebarContent companies={companies} activeId={activeCompanyId} isSuperAdmin={isSuperAdmin} aiAvailable={aiAvailable} onNavigate={() => setMobileOpen(false)} />
             </SheetContent>
           </Sheet>
 

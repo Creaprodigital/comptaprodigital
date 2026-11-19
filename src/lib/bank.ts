@@ -61,3 +61,7 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
   return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
 }
+
+/** Adresse du contenu d'un document (servi par l'API après contrôle des droits). */
+export const documentContentUrl = (companyId: string, documentId: string, download = false) =>
+  `/api/v1/companies/${companyId}/documents/${documentId}/content${download ? "?download=1" : ""}`;

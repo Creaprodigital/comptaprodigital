@@ -315,6 +315,39 @@ Le tableau de bord utilise le même calcul. Rien n'est transmis à l'administrat
   synthèse en lecture seule, chaque affichage inscrit au journal (`admin.financial_data_view`).
 - Toutes les actions d'administration sont journalisées avec `actorType = SUPER_ADMIN`.
 
+## Assistant IA (API Anthropic)
+
+- Client unique côté serveur (`src/server/ai/client.ts`, SDK `@anthropic-ai/sdk`), modèle `AI_MODEL`
+  (`claude-opus-5-5` par défaut). Chaque requête active le repli automatique en cas de refus du modèle
+  (`fallbacks: "default"`) ; un refus restant est présenté comme tel, sans résultat inventé.
+- `runAi()` (`src/server/ai/service.ts`) centralise les règles : clé présente, module `ai` dans la formule du
+  titulaire, activation par l'entreprise (`companies.aiEnabledAt`, consentement), quota mensuel
+  (`limits.aiRequestsPerMonth`), journal `ai_usage` (jetons, durée, issue — jamais de contenu), traduction des erreurs.
+- Lecture des justificatifs (`documents.ts`) : PDF ou image transmis en base64, **sortie structurée** validée par un
+  schéma Zod, puis contrôles déterministes (HT + TVA = TTC, dates, SIREN, catégorie existante). Résultat stocké dans
+  `documents.ocrData`, statut « à vérifier » ; le classement du document et la création d'un achat n'ont lieu
+  qu'après vérification par l'utilisateur.
+- Suggestions de catégories (`categorization.ts`) : 40 opérations par demande, exemples déjà catégorisés fournis au
+  modèle, suggestions incohérentes écartées (sens du montant, catégorie inconnue, taux de TVA non français).
+  Enregistrées dans `ai_suggestions` (en attente) ; l'acceptation passe par `updateTransaction`, donc par les mêmes
+  contrôles, le même historique et le même brouillard comptable qu'une catégorisation manuelle.
+- Assistant (`assistant.ts`) : boucle d'outils du SDK (`toolRunner`), outils **en lecture seule** construits pour
+  l'utilisateur courant (client cloisonné de l'entreprise, permissions du rôle) : indicateurs, recherche d'opérations,
+  de factures, d'achats, contrôles. La conversation reste dans le navigateur ; le serveur n'en garde que l'usage.
+  Le fil de conversation côté fournisseur (« message threads ») est désactivé (`thread: false`) : l'historique,
+  court, est renvoyé à chaque tour et rien n'est conservé chez Anthropic entre deux tours.
+  Le Messages API a été préféré aux Managed Agents : les outils sont des requêtes internes à l'application et aucun
+  environnement d'exécution n'est nécessaire.
+- Tests : faux serveur Anthropic (`tests/support/fake-anthropic.ts`) qui reçoit les requêtes réellement émises par le
+  SDK ; variante automatique pour les tests de bout en bout.
+
+## Contrôles automatiques
+
+`src/server/modules/controls/service.ts`, sans IA : doublons bancaires (empreinte), achats en double (même
+fournisseur, même TTC, moins de 5 jours), dépenses de plus de 7 jours sans justificatif, opérations non catégorisées
+depuis 30 jours, TVA déductible incompatible avec les taux français, montant supérieur à trois fois la médiane du
+fournisseur, factures clients échues. Chaque contrôle respecte les permissions et la formule.
+
 ## Rendu et cache (Next.js 16)
 
 Le projet utilise **Cache Components** : rien n'est mis en cache sans directive explicite. Le site vitrine est
@@ -365,5 +398,5 @@ Chaque phase suit le même déroulé : architecture, fichiers, implémentation r
 documentation des variables d'environnement, commit.
 
 - **Phase 6** — ✅ abonnements Stripe et super administration.
-- **Phase 7** — automatisations, assistant IA (suggestions soumises à validation), intégrations.
+- **Phase 7** — ✅ assistant IA (suggestions soumises à validation) et contrôles automatiques ; intégrations bancaire et de facturation électronique préparées, en attente de prestataires agréés.
 - **Phase 8** — durcissement (CSP par nonce, tests de charge, supervision), optimisation, mise en production.

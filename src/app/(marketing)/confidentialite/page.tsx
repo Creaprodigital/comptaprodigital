@@ -41,7 +41,7 @@ const sections: LegalSection[] = [
     title: "Destinataires et sous-traitants",
     paragraphs: [
       "Les données sont accessibles aux seules personnes habilitées de l'éditeur, dans la limite de leurs attributions. L'accès du support aux données financières d'une entreprise est exceptionnel, motivé, limité dans le temps et journalisé.",
-      "Nous faisons appel à des sous-traitants pour l'hébergement, l'envoi des e-mails transactionnels, le stockage des documents et le paiement des abonnements. La liste à jour est communiquée sur demande. Aucune donnée n'est vendue à des tiers.",
+      "Nous faisons appel à des sous-traitants pour l'hébergement, l'envoi des e-mails transactionnels, le stockage des documents et le paiement des abonnements. Lorsque l'entreprise active l'assistant IA, les données nécessaires à chaque demande (document à lire, libellés d'opérations, indicateurs) sont transmises à Anthropic, qui fournit le modèle d'IA, pour le seul traitement de la demande ; cette activation est facultative et révocable à tout moment. La liste à jour est communiquée sur demande. Aucune donnée n'est vendue à des tiers.",
     ],
   },
   {

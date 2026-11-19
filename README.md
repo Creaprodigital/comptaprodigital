@@ -18,7 +18,7 @@ comptabilité, TVA, documents, abonnements et administration.
 | 4 | Banque, transactions, justificatifs | ✅ Livrée |
 | 5 | Moteur comptable, journaux, TVA, exports | ✅ Livrée |
 | 6 | Stripe et super administration | ✅ Livrée |
-| 7 | Automatisations, IA, intégrations | ⏳ À venir |
+| 7 | Automatisations, IA, intégrations | ✅ Livrée (IA et contrôles ; voir les limites ci-dessous) |
 | 8 | Durcissement sécurité, optimisation, déploiement | 🔶 Socle en place (Docker, CI, sauvegardes) |
 
 Ce qui fonctionne réellement aujourd'hui :
@@ -63,6 +63,18 @@ Ce qui fonctionne réellement aujourd'hui :
   intégrations, erreurs applicatives, journal d'audit exportable, paramètres globaux. Aucun accès implicite aux
   données financières des clients : accès justifié, limité dans le temps, notifié au titulaire, révocable et
   journalisé à chaque consultation.
+- **Assistant IA** (formules Pro et Business, API Anthropic, modèle Claude) — activation par l'entreprise avec
+  consentement explicite et révocable, quota mensuel par formule, journal d'usage. Lecture des justificatifs
+  (fournisseur, numéro, dates, montants, catégorie) contrôlée par le serveur puis **vérifiée par l'utilisateur** avant la
+  création éventuelle de la facture d'achat ; suggestions de catégories pour les opérations bancaires, appliquées
+  seulement après acceptation ; assistant conversationnel qui explique les indicateurs et retrouve des opérations à
+  l'aide d'outils en lecture seule. Sans clé d'API, ces fonctions sont masquées.
+- **Contrôles automatiques** (sans IA) — doublons possibles (banque et achats), dépenses sans justificatif, opérations
+  non catégorisées, TVA et montants inhabituels, factures clients échues. Ils signalent, ne corrigent rien.
+
+Non livré en phase 7 : la synchronisation bancaire par un prestataire agréé et la transmission des factures
+électroniques via une plateforme agréée nécessitent un contrat avec ces prestataires ; seules leurs interfaces
+d'intégration sont préparées.
 
 ## Pile technique
 

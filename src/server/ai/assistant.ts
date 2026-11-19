@@ -186,6 +186,9 @@ export async function askAssistant(access: CompanyAccess, userId: string, histor
       model,
       max_tokens: 16000,
       max_iterations: 8,
+      // Historique complet à chaque tour plutôt qu'un fil conservé chez Anthropic : les échanges
+      // sont courts et aucune donnée de l'entreprise n'est gardée côté fournisseur entre deux tours.
+      thread: false,
       betas: [FALLBACK_BETA],
       fallbacks: "default",
       output_config: { effort: "medium" },

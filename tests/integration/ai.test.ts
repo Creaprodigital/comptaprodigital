@@ -12,6 +12,7 @@ import { createPurchaseFromDocument, extractDocument, normalizeExtraction, verif
 import { decideSuggestions, listCategorySuggestions, suggestCategories } from "@/server/ai/categorization";
 import { askAssistant } from "@/server/ai/assistant";
 import { plausibleVat, runControls } from "@/server/modules/controls/service";
+import { integrationsStatus } from "@/server/modules/admin/integrations";
 import { createBankAccount } from "@/server/modules/bank/accounts";
 import { listCategories } from "@/server/modules/bank/categories";
 import { createManualTransaction, getTransaction } from "@/server/modules/bank/transactions";
@@ -125,7 +126,8 @@ describe("lecture des justificatifs", () => {
     expect(e.supplierVatNumber).toBe("FR40552100554");
     expect(e.suggestedCategoryId).toBeNull();
     expect(e.currency).toBe("EUR");
-    expect(e.warnings.join(" ")).toMatch(/ne concordent pas.*SIREN|SIREN.*ne concordent pas/s);
+    expect(e.warnings.some((w) => w.includes("ne concordent pas"))).toBe(true);
+    expect(e.warnings.some((w) => w.includes("SIREN"))).toBe(true);
     expect(e.warnings).toContain("Document en deux pages");
   });
 
@@ -252,6 +254,10 @@ describe("assistant", () => {
     fake.reply((request) => {
       const messages = request.messages as Array<{ role: string; content: unknown }>;
       const toolResult = JSON.stringify(messages.at(-1)!.content);
+      // Pas de fil conservé côté fournisseur : l'historique complet et les outils sont renvoyés.
+      expect(request.thread).toBeUndefined();
+      expect(Array.isArray(request.tools)).toBe(true);
+      expect(messages).toHaveLength(3);
       expect(toolResult).toContain("PRLV OPERATEUR FIBRE");
       expect(toolResult).toContain("-54,00 €");
       return { content: [{ type: "text", text: "Le prélèvement de l'opérateur fibre s'élève à 54,00 €." }] };
@@ -297,5 +303,14 @@ describe("contrôles automatiques", () => {
     expect(findings.find((f) => f.code === "VAT_INCONSISTENT")!.items[0].label).toContain("35.0 %");
     // Le contrôle ne modifie rien.
     expect(await prisma.purchase.count({ where: { companyId: access.company.id, status: "CANCELLED" } })).toBe(0);
+  });
+});
+
+describe("supervision", () => {
+  it("vérifie la clé et le modèle sans consommer de requête, et résume l'usage", async () => {
+    const status = await integrationsStatus();
+    expect(status.ai).toMatchObject({ configured: true, ok: true, model: "claude-opus-5-5" });
+    expect(status.ai.requests30d).toBeGreaterThan(0);
+    expect(fake.requests.filter((r) => r.path === "/v1/messages")).toHaveLength(0);
   });
 });

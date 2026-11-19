@@ -38,6 +38,7 @@
 | Données des clients | Aucun accès implicite : accès justifié, borné, notifié, révocable, chaque consultation journalisée | intégration, e2e |
 | Suspension | Compte suspendu : sessions révoquées, connexion refusée ; entreprise suspendue : accès refusé | intégration |
 | Webhooks Stripe | Signature vérifiée sur le corps brut, tolérance 5 min, idempotence, corps limité à 1 Mo | intégration |
+| Assistant IA | Clé serveur uniquement ; consentement de l'entreprise ; outils en lecture seule, cloisonnés et filtrés par rôle ; aucune proposition appliquée sans validation ; quota et journal d'usage | intégration, e2e |
 | Export du journal d'audit | Cellules neutralisées contre l'injection de formules (CSV) | intégration |
 
 ## Limites connues et travaux restants (phase 8)
@@ -75,6 +76,10 @@
 - **Durées de conservation** : annoncées dans la politique de confidentialité (pièces comptables : dix ans). Leur
   application automatique (purges, anonymisation) reste à implémenter.
 - **Registre des traitements, analyse d'impact, liste des sous-traitants** : documents à établir par l'éditeur.
+- **IA** : Anthropic intervient comme sous-traitant lorsque l'entreprise active l'assistant (activation facultative,
+  révocable, journalisée). Vérifier les conditions contractuelles (conservation des données, transferts hors UE) et
+  les mentionner dans l'accord de sous-traitance. Les libellés transmis au modèle sont traités comme des données, pas
+  comme des instructions ; les outils de l'assistant ne peuvent rien modifier.
 - Les pages légales fournies sont des **modèles** à compléter (variables `NEXT_PUBLIC_LEGAL_*`) et à faire valider
   par un juriste.
 

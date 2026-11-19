@@ -51,12 +51,13 @@ export function ModuleLocked({ title, description }: { title: string; descriptio
 }
 
 /** Navigation secondaire du module bancaire. */
-export function BankTabs({ current }: { current: "operations" | "comptes" | "import" | "regles" }) {
+export function BankTabs({ current }: { current: "operations" | "comptes" | "import" | "regles" | "suggestions" }) {
   const tabs = [
     { key: "operations", label: "Opérations", href: "/app/banque" },
     { key: "comptes", label: "Comptes", href: "/app/banque/comptes" },
     { key: "import", label: "Import de relevés", href: "/app/banque/import" },
     { key: "regles", label: "Catégories et règles", href: "/app/banque/regles" },
+    { key: "suggestions", label: "Suggestions IA", href: "/app/banque/suggestions" },
   ] as const;
   return (
     <nav aria-label="Sections de la banque" className="mb-6 flex flex-wrap gap-1 rounded-xl border bg-card p-1 shadow-xs">

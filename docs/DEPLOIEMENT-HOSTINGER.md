@@ -192,6 +192,17 @@ relances manuelles restent disponibles depuis chaque facture.
 Sans clé Stripe, les comptes restent en période d'essai : rien n'est facturé ni restreint (`billing.enforcement`
 « auto »).
 
+### Assistant IA (Anthropic)
+
+1. Créez une clé d'API dans la console Anthropic (espace de travail dédié à la production, avec une limite de
+   dépenses) et renseignez `ANTHROPIC_API_KEY` dans `.env`. Laissez `ANTHROPIC_BASE_URL` vide.
+2. Redémarrez l'application. `/admin/integrations` n'a pas besoin d'appeler l'API : la disponibilité se vérifie en
+   activant l'assistant sur une entreprise de test (Paramètres de l'entreprise), puis en lisant un justificatif.
+3. Ajustez au besoin le quota mensuel de requêtes par formule dans `/admin/formules`.
+4. Mettez à jour la liste des sous-traitants (politique de confidentialité, accord de sous-traitance).
+
+Sans clé, l'assistant est masqué et les contrôles automatiques restent disponibles.
+
 ## 7. Mises à jour
 
 Manuellement :

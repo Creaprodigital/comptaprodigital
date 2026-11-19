@@ -10,6 +10,8 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = 3100;
 const baseURL = `http://localhost:${PORT}`;
 export const SMTP_PORT = 2526;
+/** Faux serveur de l'API Anthropic (tests de l'assistant IA sans appel réel). */
+export const ANTHROPIC_PORT = 2527;
 export const MAIL_DIR = path.join(__dirname, "test-results", "mails");
 
 const databaseUrl =
@@ -43,6 +45,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: databaseUrl,
       STORAGE_DRIVER: "local",
+      ANTHROPIC_API_KEY: "sk-ant-e2e",
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${ANTHROPIC_PORT}`,
       STORAGE_LOCAL_DIR: ".storage-e2e",
       APP_URL: baseURL,
       NEXT_PUBLIC_SITE_URL: baseURL,

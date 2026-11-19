@@ -4,6 +4,7 @@ import { env } from "@/server/env";
 import { getStripe, isStripeConfigured, stripeMode } from "@/server/billing/stripe";
 import { verifySmtp } from "@/server/mail/mailer";
 import { storage } from "@/server/storage";
+import { aiModel, getAnthropic } from "@/server/ai/client";
 
 /**
  * Supervision des intégrations : chaque contrôle est réel (requête à la base,
@@ -67,12 +68,27 @@ async function storageCheck(): Promise<Check> {
   return { ok: !probe.error, configured: true, detail: probe.error ? "Écriture ou lecture impossible" : `${env().STORAGE_DRIVER === "s3" ? "Stockage objet S3" : "Disque local"} : écriture, lecture et suppression en ${probe.ms} ms`, error: probe.error };
 }
 
+async function aiCheck(): Promise<Check & { model: string; requests30d: number; errors30d: number; tokens30d: number }> {
+  const since = new Date(Date.now() - 30 * 86400_000);
+  const [usage, failed] = await Promise.all([
+    prisma.aiUsage.aggregate({ where: { createdAt: { gte: since } }, _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true } }),
+    prisma.aiUsage.count({ where: { createdAt: { gte: since }, status: "ERROR" } }),
+  ]);
+  const base = { model: aiModel(), requests30d: usage._count._all, errors30d: failed, tokens30d: (usage._sum.inputTokens ?? 0) + (usage._sum.outputTokens ?? 0) };
+  const client = getAnthropic();
+  if (!client) return { ...base, ok: false, configured: false, detail: "Non configuré : l'assistant IA est masqué." };
+  // Consultation du modèle : appel gratuit qui vérifie la clé et la disponibilité du modèle.
+  const call = await timed(() => client.models.retrieve(base.model));
+  return { ...base, ok: !call.error, configured: true, detail: call.error ? "Appel à l'API refusé" : `API joignable (${call.ms} ms), modèle ${base.model} disponible`, error: call.error };
+}
+
 export async function integrationsStatus() {
-  const [database, stripe, smtp, files, lastJob] = await Promise.all([
+  const [database, stripe, smtp, files, ai, lastJob] = await Promise.all([
     databaseCheck(),
     stripeCheck(),
     smtpCheck(),
     storageCheck(),
+    aiCheck(),
     prisma.applicationSetting.findUnique({ where: { key: "jobs.daily.last_run" } }),
   ]);
   const job = (lastJob?.value ?? null) as { at?: string; durationMs?: number } | null;
@@ -83,6 +99,7 @@ export async function integrationsStatus() {
     stripe,
     smtp,
     storage: files,
+    ai,
     insee: { ok: true, configured: Boolean(env().INSEE_API_KEY), detail: env().INSEE_API_KEY ? "Clé d'API Sirene configurée" : "Sans clé : recherche via l'annuaire public des entreprises" },
     dailyJobs: {
       ok: jobAge !== null && jobAge < 36 * 3600_000,

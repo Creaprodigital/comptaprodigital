@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DownloadIcon, EyeIcon, FileImageIcon, FileTextIcon, FolderSearchIcon, Link2OffIcon, Loader2Icon, LockIcon, PencilIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { DownloadIcon, EyeIcon, FileImageIcon, FileTextIcon, FolderSearchIcon, Link2OffIcon, Loader2Icon, LockIcon, PencilIcon, ScanTextIcon, Trash2Icon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { DocumentView } from "@/server/modules/documents/service";
 import { api, ApiError, apiUpload, errorMessage } from "@/lib/api-client";
-import { DOCUMENT_ACCEPT, DOCUMENT_CATEGORIES, DOCUMENT_CATEGORY_LABELS, MAX_DOCUMENT_BYTES, formatFileSize, type DocumentCategoryKey } from "@/lib/bank";
+import { documentContentUrl, DOCUMENT_ACCEPT, DOCUMENT_CATEGORIES, DOCUMENT_CATEGORY_LABELS, MAX_DOCUMENT_BYTES, formatFileSize, type DocumentCategoryKey } from "@/lib/bank";
 import { formatDate } from "@/lib/format";
 import { useResetOnHide } from "@/lib/use-reset-on-hide";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 type EntityLink = { entityType: "BANK_TRANSACTION" | "INVOICE" | "QUOTE" | "PURCHASE"; entityId: string };
 
-const contentUrl = (companyId: string, documentId: string, download = false) => `/api/v1/companies/${companyId}/documents/${documentId}/content${download ? "?download=1" : ""}`;
+const contentUrl = documentContentUrl;
 
 function FileIcon({ mimeType }: { mimeType: string }) {
   const Icon = mimeType.startsWith("image/") ? FileImageIcon : FileTextIcon;
@@ -325,6 +325,11 @@ export function DocumentsTable({ companyId, documents, canWrite, canDelete }: { 
               <TableCell className="text-right whitespace-nowrap">
                 <Button variant="ghost" size="icon-sm" onClick={() => setPreview(document)} aria-label={`Aperçu de ${document.name}`}>
                   <EyeIcon />
+                </Button>
+                <Button asChild variant="ghost" size="icon-sm">
+                  <Link href={`/app/documents/${document.id}`} aria-label={`Fiche et lecture automatique de ${document.name}`}>
+                    <ScanTextIcon />
+                  </Link>
                 </Button>
                 <Button asChild variant="ghost" size="icon-sm">
                   <a href={contentUrl(companyId, document.id, true)} download aria-label={`Télécharger ${document.name}`}>

@@ -21,11 +21,17 @@ export async function resetDatabase(): Promise<void> {
   const tables = await prisma.$queryRaw<Array<{ name: string }>>`
     SELECT table_name AS name FROM information_schema.tables
     WHERE table_schema = DATABASE() AND table_name <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 0");
-  for (const { name } of tables) {
-    await prisma.$executeRaw(Prisma.sql`TRUNCATE TABLE ${Prisma.raw(`\`${name}\``)}`);
-  }
-  await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 1");
+  // Une seule connexion : FOREIGN_KEY_CHECKS est un réglage de session, qui doit valoir pour chaque TRUNCATE.
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 0");
+      for (const { name } of tables) {
+        await tx.$executeRaw(Prisma.sql`TRUNCATE TABLE ${Prisma.raw(`\`${name}\``)}`);
+      }
+      await tx.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 1");
+    },
+    { timeout: 120_000, maxWait: 30_000 },
+  );
   await seedReferenceData(prisma);
   invalidatePermissionCache();
   clearMemoryOutbox();

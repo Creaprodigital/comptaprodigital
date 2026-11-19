@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { AppBanners } from "@/components/app/banners";
 import { bannersFor } from "@/server/billing/banners";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isAiConfigured } from "@/server/ai/client";
 
 export const metadata: Metadata = {
   title: { default: "Espace client", template: "%s — ComptaPro Digital" },
@@ -38,6 +39,7 @@ async function AuthenticatedShell({ children }: { children: React.ReactNode }) {
       companies={companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }))}
       activeCompanyId={access?.company.id ?? null}
       isSuperAdmin={auth.user.isSuperAdmin}
+      aiAvailable={isAiConfigured()}
       banners={<AppBanners banners={banners} />}
     >
       {children}

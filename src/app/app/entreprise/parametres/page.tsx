@@ -7,8 +7,16 @@ import { toIsoDate } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { CompanyForm } from "@/components/app/company-form";
+import { AiSettingsCard } from "@/components/app/ai/ai-settings-card";
+import { aiStatus } from "@/server/ai/service";
 import { PageHeader } from "@/components/app/page-header";
 
 export const metadata: Metadata = { title: "Paramètres de l'entreprise" };
@@ -16,17 +24,32 @@ export const metadata: Metadata = { title: "Paramètres de l'entreprise" };
 export default async function CompanySettingsPage() {
   const { access } = await requireCompany("company:read");
   const canEdit = access.permissions.has("company:update");
-  const fiscalYears = await tenantDb(access.company.id).fiscalYear.findMany({ orderBy: { startDate: "desc" }, take: 5 });
+  const [fiscalYears, ai] = await Promise.all([
+    tenantDb(access.company.id).fiscalYear.findMany({
+      orderBy: { startDate: "desc" },
+      take: 5,
+    }),
+    aiStatus(access.company),
+  ]);
+  const canManageAi =
+    canEdit &&
+    (access.roleKey === "OWNER" || access.roleKey === "COMPANY_ADMIN");
 
   return (
     <>
-      <PageHeader title="Paramètres de l'entreprise" description="Identité, statut juridique, régimes fiscaux et coordonnées." />
+      <PageHeader
+        title="Paramètres de l'entreprise"
+        description="Identité, statut juridique, régimes fiscaux et coordonnées."
+      />
       {!canEdit ? (
         <Alert className="mb-6">
           <EyeIcon />
           <AlertDescription className="text-foreground">
-            Votre rôle ({access.roleKey === "READ_ONLY" ? "lecture seule" : "accès restreint"}) permet de consulter ces
-            informations, mais pas de les modifier.
+            Votre rôle (
+            {access.roleKey === "READ_ONLY"
+              ? "lecture seule"
+              : "accès restreint"}
+            ) permet de consulter ces informations, mais pas de les modifier.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -34,33 +57,55 @@ export default async function CompanySettingsPage() {
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <Card>
           <CardContent>
-            <CompanyForm mode="edit" company={serializeCompany(access.company)} readOnly={!canEdit} />
+            <CompanyForm
+              mode="edit"
+              company={serializeCompany(access.company)}
+              readOnly={!canEdit}
+            />
           </CardContent>
         </Card>
 
-        <Card className="self-start">
-          <CardHeader>
-            <CardTitle>Exercices comptables</CardTitle>
-            <CardDescription>
-              Tenue : {access.company.accountingMode === "CASH_BOOK" ? "livre des recettes (micro-entreprise)" : "comptabilité en partie double"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-3">
-              {fiscalYears.map((year) => (
-                <li key={year.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span>
-                    <span className="block font-medium">{year.label}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {formatDate(toIsoDate(year.startDate))} – {formatDate(toIsoDate(year.endDate))}
+        <div className="grid content-start gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Exercices comptables</CardTitle>
+              <CardDescription>
+                Tenue :{" "}
+                {access.company.accountingMode === "CASH_BOOK"
+                  ? "livre des recettes (micro-entreprise)"
+                  : "comptabilité en partie double"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="grid gap-3">
+                {fiscalYears.map((year) => (
+                  <li
+                    key={year.id}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <span>
+                      <span className="block font-medium">{year.label}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {formatDate(toIsoDate(year.startDate))} –{" "}
+                        {formatDate(toIsoDate(year.endDate))}
+                      </span>
                     </span>
-                  </span>
-                  <Badge variant={year.status === "OPEN" ? "success" : "secondary"}>{year.status === "OPEN" ? "Ouvert" : "Clôturé"}</Badge>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+                    <Badge
+                      variant={year.status === "OPEN" ? "success" : "secondary"}
+                    >
+                      {year.status === "OPEN" ? "Ouvert" : "Clôturé"}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+          <AiSettingsCard
+            companyId={access.company.id}
+            status={ai}
+            canManage={canManageAi}
+          />
+        </div>
       </div>
     </>
   );

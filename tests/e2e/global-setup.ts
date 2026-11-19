@@ -2,7 +2,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
-import { MAIL_DIR, SMTP_PORT } from "../../playwright.config";
+import { ANTHROPIC_PORT, MAIL_DIR, SMTP_PORT } from "../../playwright.config";
+import { startAutoFake } from "../support/fake-anthropic-auto";
 
 /**
  * Serveur SMTP local : l'application envoie ses e-mails par SMTP comme en
@@ -33,7 +34,10 @@ export default async function globalSetup() {
     server.listen(SMTP_PORT, "127.0.0.1", () => resolve());
   });
 
+  const anthropic = await startAutoFake(ANTHROPIC_PORT);
+
   return async () => {
+    await anthropic.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   };
 }
