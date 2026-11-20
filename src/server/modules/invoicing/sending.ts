@@ -6,9 +6,10 @@ import { mailTemplates } from "@/server/mail/templates";
 import { getCompanyAccess, type CompanyAccess } from "@/server/rbac/service";
 import { formatIsoForHumans, toIsoDate, todayInParis, type IsoDate } from "@/lib/dates";
 import { INVOICE_TYPE_LABELS, remainingAmount } from "@/lib/invoicing";
-import { buildInvoiceDocument, buildQuoteDocument } from "@/server/modules/invoicing/document-model";
+import { buildQuoteDocument } from "@/server/modules/invoicing/document-model";
 import { getInvoiceDetail, markInvoiceSent, type InvoiceWithDetail } from "@/server/modules/invoicing/invoices";
 import { pdfFileName, renderDocumentPdf } from "@/server/modules/invoicing/pdf";
+import { renderInvoicePdf } from "@/server/modules/invoicing/invoice-pdf";
 import { getQuoteDetail, setQuoteStatus } from "@/server/modules/invoicing/quotes";
 import type { Meta } from "@/server/modules/invoicing/shared";
 
@@ -42,8 +43,7 @@ export async function sendInvoiceByEmail(access: CompanyAccess, sender: Sender, 
   const invoice = await getInvoiceDetail(access, invoiceId);
   if (invoice.status === "DRAFT") throw errors.badRequest("INVOICE_NOT_ISSUED", "Émettez la facture avant de l'envoyer.");
 
-  const document = await buildInvoiceDocument(access, invoice);
-  const pdf = await renderDocumentPdf(document);
+  const { pdf, fileName } = await renderInvoicePdf(access, invoice);
   await sendMail({
     ...mailTemplates.documentEmail({
       to: input.to,
@@ -53,7 +53,7 @@ export async function sendInvoiceByEmail(access: CompanyAccess, sender: Sender, 
       replyTo: access.company.email ?? sender?.email,
       cc: input.copyToSelf && sender ? sender.email : undefined,
     }),
-    attachments: [{ filename: pdfFileName(document), content: pdf, contentType: "application/pdf" }],
+    attachments: [{ filename: fileName, content: pdf, contentType: "application/pdf" }],
   });
   await markInvoiceSent(access.company.id, invoice.id);
   await recordAudit({
@@ -125,11 +125,10 @@ export async function sendReminder(access: CompanyAccess, sender: Sender, invoic
   }
   const rank = invoice.reminderCount + 1;
   const { subject, message } = reminderMessage(access.company.name, invoice, rank);
-  const document = await buildInvoiceDocument(access, invoice);
-  const pdf = await renderDocumentPdf(document);
+  const { pdf, fileName } = await renderInvoicePdf(access, invoice);
   await sendMail({
     ...mailTemplates.documentEmail({ to: invoice.customer.email, subject, message, senderName: access.company.name, replyTo: access.company.email ?? sender?.email }),
-    attachments: [{ filename: pdfFileName(document), content: pdf, contentType: "application/pdf" }],
+    attachments: [{ filename: fileName, content: pdf, contentType: "application/pdf" }],
   });
   await prisma.invoice.update({ where: { id: invoice.id }, data: { reminderCount: rank, lastReminderAt: new Date() } });
   await recordAudit({

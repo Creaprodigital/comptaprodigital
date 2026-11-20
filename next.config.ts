@@ -57,6 +57,11 @@ const nextConfig: NextConfig = {
   // Sortie autonome pour l'image Docker (activée par le Dockerfile).
   output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   serverExternalPackages: ["@node-rs/argon2", "@prisma/client", "pdfkit"],
+  // Fichiers lus à l'exécution (image Docker autonome) : polices incorporées aux PDF et données de PDFKit
+  // (métriques, profil de couleurs sRGB exigé par le PDF/A).
+  outputFileTracingIncludes: {
+    "/*": ["./assets/fonts/**/*", "./node_modules/pdfkit/js/data/**/*"],
+  },
   experimental: {
     // Envoi de justificatifs (10 Mo au plus par fichier, contrôlé par l'API) : marge pour l'enveloppe multipart.
     proxyClientMaxBodySize: "12mb",

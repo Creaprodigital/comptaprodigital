@@ -164,18 +164,33 @@ calcul des totaux (`src/lib/invoicing.ts`) est un module pur, partagé avec le f
 | Récurrence | La tâche quotidienne génère les factures échues, datées du jour de génération pour respecter la chronologie ; brouillon, émission ou émission + envoi selon le réglage. |
 | Formules | Les factures d'acompte et récurrentes relèvent du module `invoicing-advanced` (Pro et Business) ; les avoirs sont disponibles dans toutes les formules, car ils sont le seul moyen légal de corriger une facture. |
 
-### PDF et facturation électronique
+### PDF et facturation électronique (Factur-X)
 
-Le rendu passe par une représentation structurée indépendante du format (`document-model.ts` :
-émetteur, client, lignes, ventilation de TVA, mentions, conditions de règlement), aujourd'hui convertie en PDF par
-PDFKit (`pdf.ts`). Les formats structurés de la réforme (Factur-X, UBL, CII) se brancheront sur ce même modèle, et le
-schéma porte déjà les données requises (SIREN du client, nature de l'opération, exigibilité de la TVA, statut de
-dépôt). **Le PDF produit aujourd'hui n'est pas une facture électronique au sens de la réforme** : celle-ci exige un
-format structuré transmis par une plateforme agréée, à intégrer dans une phase ultérieure.
+Le rendu passe par une représentation structurée indépendante du format (`document-model.ts`), convertie en PDF
+par PDFKit (`pdf.ts`) avec des polices **incorporées** (Liberation Sans, licence SIL OFL, `assets/fonts`).
 
-Le PDF d'une facture émise est régénéré à la demande à partir des données figées (il indique alors les règlements
-reçus). L'original, tel qu'émis, est archivé au moment de l'émission dans les documents de l'entreprise
-(`invoices.pdfDocumentId`) : il ne peut être ni modifié ni supprimé.
+Une fois émise, une facture, un acompte ou un avoir est produit au format **Factur-X, profil EN 16931**
+(`facturx.ts`, `invoice-pdf.ts`) :
+
+- XML CII (UN/CEFACT) : types 380 (facture), 386 (acompte), 381 (avoir, avec référence à la facture d'origine) ;
+  vendeur et acheteur (SIRET/SIREN, adresse, n° de TVA), lignes (unités UN/ECE, remises de ligne), remise
+  globale ventilée par taux, TVA par taux (catégories S, Z, E avec `VATEX-FR-FRANCHISE`), échéance, IBAN,
+  mentions obligatoires (pénalités, indemnité de 40 €, escompte). Une ligne de déduction d'acompte s'exprime par
+  une quantité négative (règle BR-27 : prix net jamais négatif).
+- Contrôles avant incorporation (sommes des lignes, bases et TVA par taux, totaux, champs obligatoires, n° de TVA
+  du vendeur redevable). Si un contrôle échoue, la facture reste un PDF simple et la page de la facture indique
+  quoi corriger : jamais de Factur-X incohérent.
+- PDF/A-3b : XML incorporé (`factur-x.xml`, relation « Alternative »), métadonnées XMP Factur-X et schéma
+  d'extension PDF/A, profil de couleurs sRGB. L'original archivé à l'émission est ce PDF ; `invoices.eInvoiceFormat`
+  vaut alors `FACTUR_X`.
+- Tests (`tests/integration/facturx.test.ts`) : chaque XML est validé par les **schémas XSD officiels Factur-X 1.09**
+  et par les **règles métier officielles EN 16931 + Factur-X** (schématron compilé, SaxonJS), comme le font les
+  plateformes. Le respect complet de la norme PDF/A-3 (veraPDF) reste à contrôler avant la mise en production.
+
+La **transmission** des factures électroniques passe par une plateforme agréée (voir « Facturation électronique :
+plateformes agréées »). Le PDF d'une facture émise est régénéré à la demande à partir des données figées ; l'original
+tel qu'émis est archivé dans les documents de l'entreprise (`invoices.pdfDocumentId`) et ne peut être ni modifié ni
+supprimé.
 
 ### Tâches quotidiennes
 
@@ -347,6 +362,16 @@ Le tableau de bord utilise le même calcul. Rien n'est transmis à l'administrat
 fournisseur, même TTC, moins de 5 jours), dépenses de plus de 7 jours sans justificatif, opérations non catégorisées
 depuis 30 jours, TVA déductible incompatible avec les taux français, montant supérieur à trois fois la médiane du
 fournisseur, factures clients échues. Chaque contrôle respecte les permissions et la formule.
+
+## Migrations de base de données
+
+- Créées avec `npx prisma migrate dev --create-only`, **relues** avant d'être appliquées.
+- Défaut connu de Prisma 6.19 (MySQL) : lorsqu'un index couvrant une clé étrangère est remplacé, la migration
+  générée supprime la clé étrangère et « recrée » à sa place une autre contrainte, déjà existante. Dans ce cas, la
+  migration s'écrit à la main : créer le nouvel index **avant** de supprimer l'ancien, sans toucher à la clé
+  étrangère (exemple : `20261119102416_index_performance`).
+- Garde-fous en intégration continue : `npm run check:migrations` (clé étrangère supprimée sans être recréée, ou
+  créée deux fois) et `prisma migrate diff --exit-code` (migrations et schéma strictement identiques).
 
 ## Rendu et cache (Next.js 16)
 

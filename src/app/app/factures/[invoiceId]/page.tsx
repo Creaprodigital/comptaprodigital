@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeftIcon, InfoIcon } from "lucide-react";
+import { AlertTriangleIcon, ArrowLeftIcon, FileCode2Icon, InfoIcon } from "lucide-react";
+import { buildFacturX } from "@/server/modules/invoicing/facturx";
 import { requireCompany } from "@/server/auth/guards";
 import { getInvoiceDetail, getInvoiceHistory, serializeInvoice } from "@/server/modules/invoicing/invoices";
 import { defaultInvoiceMessage } from "@/server/modules/invoicing/sending";
@@ -28,6 +29,8 @@ export default async function InvoicePage({ params }: Props) {
   const money = (value: string) => formatCurrency(value, { currency: access.company.currency });
   const defaults = draft ? { subject: "", message: "" } : defaultInvoiceMessage(access.company.name, detail);
   const settled = !draft && !creditNote;
+  // Facture électronique Factur-X (EN 16931) : conformité des données de la facture émise.
+  const facturX = draft ? null : buildFacturX(access.company, detail);
 
   return (
     <>
@@ -69,6 +72,31 @@ export default async function InvoicePage({ params }: Props) {
             {creditNote ? "f" : "ve"} à l'émission.
           </AlertDescription>
         </Alert>
+      ) : null}
+
+      {facturX ? (
+        facturX.problems.length === 0 ? (
+          <Alert className="mb-6">
+            <FileCode2Icon />
+            <AlertDescription className="text-foreground">
+              Facture électronique Factur-X (profil EN 16931) : le PDF contient les données structurées de la facture, lisibles par les logiciels comptables et les plateformes agréées.{" "}
+              <a href={`/api/v1/companies/${access.company.id}/invoices/${invoice.id}/facturx`} className="font-medium text-primary hover:underline">
+                Télécharger le XML
+              </a>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="mb-6 border-warning/40 bg-warning-soft">
+            <AlertTriangleIcon />
+            <AlertDescription className="text-foreground">
+              <p className="font-medium">Facture émise en PDF simple : ses données ne permettent pas de produire la facture électronique Factur-X.</p>
+              <ul className="mt-1 list-disc pl-5">{facturX.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+              <p className="mt-1">
+                Complétez les <Link href="/app/entreprise/parametres" className="font-medium text-primary hover:underline">paramètres de l'entreprise</Link> ou la fiche client : les prochaines factures seront produites au format électronique.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">

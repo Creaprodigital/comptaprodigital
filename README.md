@@ -77,6 +77,9 @@ Ce qui fonctionne réellement aujourd'hui :
   purges selon la politique de conservation, test de restauration automatisé, contrôle de l'installation de
   production, alerte quotidienne aux administrateurs, optimisations mesurées (`docs/PERFORMANCE.md`).
 
+- **Facture électronique Factur-X** — chaque facture, acompte ou avoir émis est produit au format Factur-X (PDF/A-3
+  avec XML EN 16931), validé en test par les schémas et règles officiels ; le XML est téléchargeable depuis la facture.
+
 Non livré en phase 7 : la synchronisation bancaire par un prestataire agréé et la transmission des factures
 électroniques via une plateforme agréée nécessitent un contrat avec ces prestataires ; seules leurs interfaces
 d'intégration sont préparées.

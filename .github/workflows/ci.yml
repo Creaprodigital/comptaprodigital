@@ -41,12 +41,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # xmllint : validation des factures électroniques Factur-X par les schémas XSD officiels.
+      - name: Outils de validation
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
       - name: Lint
         run: npm run lint
       - name: Vérification des types
         run: npm run typecheck
       - name: Validation du schéma Prisma
         run: npx prisma validate
+      - name: Migrations sûres (clés étrangères) et conformes au schéma
+        run: |
+          npm run check:migrations
+          mysql -h 127.0.0.1 -uroot -pci_root_password -e "CREATE DATABASE IF NOT EXISTS comptapro_shadow"
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url mysql://root:ci_root_password@127.0.0.1:3306/comptapro_shadow --exit-code
       - name: Tests unitaires et d'intégration (base comptapro_test)
         run: npm test
       - name: Sauvegarde chiffrée et test de restauration

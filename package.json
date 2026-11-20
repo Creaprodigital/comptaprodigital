@@ -24,7 +24,8 @@
     "keys:rotate": "tsx scripts/rotate-encryption-key.ts",
     "check:bundle": "node scripts/check-client-bundle.mjs",
     "backup:verify": "bash scripts/verify-restore.sh",
-    "check:production": "tsx scripts/check-production.ts"
+    "check:production": "tsx scripts/check-production.ts",
+    "check:migrations": "node scripts/check-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",
@@ -75,6 +76,7 @@
     "pdf-parse": "^2.4.5",
     "prettier": "^3.10.1",
     "s3rver": "^3.7.1",
+    "saxon-js": "^2.7.0",
     "smtp-server": "^3.21.4",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
