@@ -279,6 +279,11 @@ model Company {
   /// Activation de l'assistant IA (consentement du titulaire ou d'un administrateur de l'entreprise).
   aiEnabledAt              DateTime?
   aiEnabledById            String?
+  /// Synchronisation comptable : dernière passe (complète ou incrémentale), dernière passe complète,
+  /// et reprise de l'historique en cours (en arrière-plan) depuis cette date.
+  accountingSyncedAt       DateTime?
+  accountingFullSyncAt     DateTime?
+  accountingBackfillAt     DateTime?
   createdById              String
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt

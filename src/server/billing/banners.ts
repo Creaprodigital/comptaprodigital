@@ -8,11 +8,12 @@ const date = (d: Date) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", mon
 
 /** Bandeaux à afficher à un utilisateur : annonces, situation de son abonnement, entreprise en lecture seule. */
 export async function bannersFor(userId: string, activeCompanyId: string | null): Promise<AppBanner[]> {
-  const [announcements, subscription, enforced, readOnly] = await Promise.all([
+  const [announcements, subscription, enforced, readOnly, backfill] = await Promise.all([
     liveAnnouncements(),
     prisma.subscription.findUnique({ where: { userId }, select: { status: true, trialEndsAt: true, stripeSubscriptionId: true, cancelAtPeriodEnd: true, currentPeriodEnd: true } }),
     enforcementActive(),
     activeCompanyId ? isCompanyReadOnly(activeCompanyId) : Promise.resolve(false),
+    activeCompanyId ? prisma.company.findUnique({ where: { id: activeCompanyId }, select: { accountingBackfillAt: true } }) : Promise.resolve(null),
   ]);
   const banners: AppBanner[] = announcements.map((a) => ({ kind: "announcement", id: a.id, level: a.level, title: a.title, body: a.body }));
   const action = { label: "Gérer mon abonnement", href: "/app/abonnement" };
@@ -31,6 +32,9 @@ export async function bannersFor(userId: string, activeCompanyId: string | null)
   // Membre d'une entreprise dont le titulaire n'a plus d'abonnement actif.
   if (readOnly && !banners.some((b) => b.id === "billing-inactive")) {
     banners.push({ kind: "billing", id: "company-read-only", level: "CRITICAL", title: "Cette entreprise est en lecture seule", body: "L'abonnement de son titulaire n'est plus actif : les données restent consultables et exportables, mais ne peuvent plus être modifiées." });
+  }
+  if (backfill?.accountingBackfillAt) {
+    banners.push({ kind: "billing", id: "accounting-backfill", level: "INFO", title: "Reprise de l'historique comptable en cours", body: "Les écritures de vos pièces existantes sont en cours de génération : les états comptables seront complets dans quelques minutes." });
   }
   return banners;
 }

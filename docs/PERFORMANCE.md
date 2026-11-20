@@ -34,13 +34,19 @@ deux états agrègent l'ensemble des lignes de l'exercice et n'ont pas été mod
 - **Index** (`prisma/migrations/20261119102416_index_performance`) : tri de la liste des opérations sans tri en
   mémoire (47 ms → 0,07 ms), doublons (35 ms → 0,01 ms), opérations sans justificatif (46 ms → 22 ms).
 
+## Gros volumes
+
+- **Reprise de l'historique** : à la première activation de la comptabilité, une entreprise de moins de
+  1 000 pièces est reprise immédiatement ; au-delà, la reprise s'exécute après la réponse (`after()`), un bandeau
+  « Reprise de l'historique comptable en cours » prévient les membres, et une reprise interrompue (redémarrage) est
+  refaite intégralement par la tâche quotidienne.
+- **Synchronisation incrémentale** : la tâche quotidienne ne reprend que les pièces modifiées depuis la dernière
+  passe (marge d'une heure). Une passe complète est faite au moins une fois par semaine, après un échec de
+  synchronisation enregistré, ou si une reprise est en attente.
+- **Grand livre paginé** : 500 lignes par page, calculées en base (fonctions de fenêtre MySQL) : soldes
+  progressifs et totaux du compte restent exacts d'une page à l'autre. L'export CSV reste complet.
+
 ## Limites connues
 
-- La première activation de la comptabilité d'une entreprise ayant déjà un historique volumineux reprend toutes ses
-  pièces (82 s pour 24 000 écritures) pendant le premier affichage de la comptabilité. Pour un tel volume, lancez
-  plutôt la tâche quotidienne (`npm run jobs:daily`) après l'activation.
-- La tâche quotidienne resynchronise toutes les entreprises en partie double : environ 1 ms par pièce. Au-delà de
-  quelques centaines d'entreprises actives, une resynchronisation incrémentale (pièces modifiées depuis la veille)
-  sera à envisager.
-- Le grand livre d'un compte très mouvementé affiche toutes ses lignes ; une pagination sera utile au-delà de
-  quelques dizaines de milliers de lignes par exercice.
+- La passe complète hebdomadaire reste proportionnelle au nombre de pièces (environ 1 ms par pièce).
+

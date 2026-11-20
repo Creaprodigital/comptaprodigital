@@ -16,13 +16,31 @@ import { AccountingTabs, Amount, PeriodFilter, exportQuery, reportParams } from 
 
 export const metadata: Metadata = { title: "Grand livre" };
 
-type Props = { searchParams: Promise<{ exercice?: string; du?: string; au?: string; brouillard?: string; compte?: string }> };
+type Props = { searchParams: Promise<{ exercice?: string; du?: string; au?: string; brouillard?: string; compte?: string; page?: string }> };
 
 export default async function LedgerPage({ searchParams }: Props) {
   const [{ access, state }, params] = await Promise.all([accountingPageAccess(), searchParams]);
   if (state !== "ok") redirect("/app/comptabilite");
   const filter = reportParams(params);
-  const [ledger, years] = await Promise.all([generalLedger(access, filter), listFiscalYears(access)]);
+  const page = Math.min(10_000, Math.max(1, Number(params.page) || 1));
+  const [ledger, years] = await Promise.all([generalLedger(access, filter, { page }), listFiscalYears(access)]);
+  const { pagination } = ledger;
+  const pageHref = (target: number) => {
+    const search = new URLSearchParams(Object.entries({ ...params, page: String(target) }).filter((e): e is [string, string] => Boolean(e[1])));
+    return `/app/comptabilite/grand-livre?${search}`;
+  };
+  const pager =
+    pagination.pages > 1 ? (
+      <nav aria-label="Pages du grand livre" className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">
+          Lignes {(pagination.page - 1) * pagination.pageSize + 1} à {Math.min(pagination.page * pagination.pageSize, pagination.totalLines)} sur {pagination.totalLines} — page {pagination.page} / {pagination.pages}
+        </span>
+        <span className="flex gap-2">
+          {pagination.page > 1 ? <Button asChild variant="outline" size="sm"><Link href={pageHref(pagination.page - 1)}>Page précédente</Link></Button> : null}
+          {pagination.page < pagination.pages ? <Button asChild variant="outline" size="sm"><Link href={pageHref(pagination.page + 1)}>Page suivante</Link></Button> : null}
+        </span>
+      </nav>
+    ) : null;
   const currency = access.company.currency;
   return (
     <>
@@ -42,6 +60,7 @@ export default async function LedgerPage({ searchParams }: Props) {
         <EmptyState title="Aucun mouvement" description="Aucune écriture ne correspond à cette période ou à ce compte." />
       ) : (
         <div className="grid gap-4">
+          {pager}
           {ledger.accounts.map((account) => (
             <Card key={account.accountNumber}>
               <CardHeader className="flex-row flex-wrap items-baseline justify-between gap-2">
@@ -61,7 +80,12 @@ export default async function LedgerPage({ searchParams }: Props) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {Number(account.opening) !== 0 ? (
+                    {account.continuedFromPrevious ? (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">Suite du compte (lignes précédentes sur la page précédente).</TableCell>
+                      </TableRow>
+                    ) : null}
+                    {Number(account.opening) !== 0 && !account.continuedFromPrevious ? (
                       <TableRow className="hover:bg-transparent">
                         <TableCell colSpan={4} className="text-sm text-muted-foreground">Report au {formatDate(ledger.period.from)}</TableCell>
                         <TableCell /><TableCell />
@@ -82,8 +106,13 @@ export default async function LedgerPage({ searchParams }: Props) {
                         <TableCell className="hidden text-right md:table-cell"><Amount value={line.balance} currency={currency} /></TableCell>
                       </TableRow>
                     ))}
+                    {account.continuesOnNext ? (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="text-sm text-muted-foreground">Suite du compte sur la page suivante.</TableCell>
+                      </TableRow>
+                    ) : null}
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={4} className="font-semibold">Total des mouvements</TableCell>
+                      <TableCell colSpan={4} className="font-semibold">Total des mouvements de la période</TableCell>
                       <TableCell className="text-right"><Amount value={account.debit} currency={currency} strong /></TableCell>
                       <TableCell className="text-right"><Amount value={account.credit} currency={currency} strong /></TableCell>
                       <TableCell className="hidden md:table-cell" />
@@ -93,7 +122,7 @@ export default async function LedgerPage({ searchParams }: Props) {
               </CardContent>
             </Card>
           ))}
-          {ledger.truncated ? <p className="text-sm text-warning-foreground">Affichage limité : précisez un compte ou une période, ou exportez le grand livre complet.</p> : null}
+          {pager}
         </div>
       )}
     </>

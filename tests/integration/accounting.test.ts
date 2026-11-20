@@ -245,6 +245,25 @@ describe("états comptables", () => {
     expect(bank.closing).toBe("400.00");
   });
 
+  it("pagine le grand livre sans fausser soldes progressifs ni totaux", async () => {
+    const full = await generalLedger(access, {}, { pageSize: 10_000 });
+    const allLines = full.accounts.flatMap((a) => a.lines.map((l) => ({ account: a.accountNumber, ...l })));
+    expect(full.pagination.totalLines).toBe(allLines.length);
+    // Pages de 2 lignes : la concaténation redonne exactement le grand livre complet.
+    const paged: typeof allLines = [];
+    for (let page = 1; page <= Math.ceil(allLines.length / 2); page++) {
+      const part = await generalLedger(access, {}, { page, pageSize: 2 });
+      expect(part.pagination.pages).toBe(Math.ceil(allLines.length / 2));
+      for (const account of part.accounts) {
+        const reference = full.accounts.find((a) => a.accountNumber === account.accountNumber)!;
+        // Totaux et solde de fin : ceux de toute la période, quelle que soit la page.
+        expect({ debit: account.debit, credit: account.credit, closing: account.closing }).toEqual({ debit: reference.debit, credit: reference.credit, closing: reference.closing });
+        paged.push(...account.lines.map((l) => ({ account: account.accountNumber, ...l })));
+      }
+    }
+    expect(paged).toEqual(allLines);
+  });
+
   it("établit l'état de rapprochement bancaire sans écart", async () => {
     const state = await bankReconciliation(access, bankAccountId, today);
     expect(state).toMatchObject({ bankBalance: "400.00", bookBalance: "400.00", difference: "0.00", missingEntries: [] });

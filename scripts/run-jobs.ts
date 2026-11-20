@@ -7,7 +7,7 @@ import { purgeExpiredRateLimits } from "../src/server/security/rate-limit";
 import { runRecurringInvoices } from "../src/server/modules/invoicing/recurring";
 import { runAutomaticReminders } from "../src/server/modules/invoicing/sending";
 import { purgeDeletedDocuments } from "../src/server/modules/documents/service";
-import { resyncAll } from "../src/server/modules/accounting/sync";
+import { dailyAccountingSync } from "../src/server/modules/accounting/sync";
 import { runTrialJobs } from "../src/server/billing/service";
 
 /**
@@ -27,16 +27,19 @@ async function main() {
   // Filet de sécurité : recalcul des écritures automatiques (sans effet si tout est à jour).
   const companies = await prisma.company.findMany({ where: { status: "ACTIVE", accountingMode: "DOUBLE_ENTRY" }, select: { id: true, fiscalYearStartMonth: true, accountingMode: true } });
   let accountingChanges = 0;
+  let fullSyncs = 0;
   let accountingErrors = 0;
   for (const company of companies) {
     try {
-      accountingChanges += (await resyncAll(company)).changed;
+      const result = await dailyAccountingSync(company);
+      accountingChanges += result.changed;
+      if (result.mode === "full") fullSyncs++;
     } catch (error) {
       accountingErrors++;
       console.error(`Comptabilité ${company.id} :`, error);
     }
   }
-  console.log(`Comptabilité : ${companies.length} entreprise(s) vérifiée(s), ${accountingChanges} écriture(s) mise(s) à jour, ${accountingErrors} erreur(s)`);
+  console.log(`Comptabilité : ${companies.length} entreprise(s) vérifiée(s) (${fullSyncs} passe(s) complète(s)), ${accountingChanges} écriture(s) mise(s) à jour, ${accountingErrors} erreur(s)`);
   const sessions = await purgeStaleSessions();
   const counters = await purgeExpiredRateLimits();
   const documents = await purgeDeletedDocuments();

@@ -171,7 +171,7 @@ export async function syncAccountingFor(company: CompanyRef, refs: SourceRef[]):
       );
     }
     // Première utilisation de la comptabilité : reprise de tout l'historique.
-    if (fresh) await resyncAll(company);
+    if (fresh) await backfillHistory(company);
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     console.error("[comptabilité] synchronisation impossible", refs.slice(0, 5), err);
@@ -214,10 +214,8 @@ async function allSourceRefs(companyId: string): Promise<SourceRef[]> {
   });
 }
 
-/** Recalcule toutes les écritures automatiques d'une entreprise. */
-export async function resyncAll(company: CompanyRef): Promise<{ examined: number; changed: number }> {
-  if (!(await isAccountingEnabled(company))) return { examined: 0, changed: 0 };
-  const refs = await allSourceRefs(company.id);
+/** Synchronise une liste de pièces par lots de 100 (une transaction par lot, verrou de l'entreprise). */
+async function syncRefs(company: CompanyRef, refs: SourceRef[]): Promise<number> {
   let changed = 0;
   for (let start = 0; start < refs.length; start += 100) {
     const chunk = refs.slice(start, start + 100);
@@ -232,8 +230,75 @@ export async function resyncAll(company: CompanyRef): Promise<{ examined: number
       ),
     );
   }
+  return changed;
+}
+
+/** Recalcule toutes les écritures automatiques d'une entreprise. */
+export async function resyncAll(company: CompanyRef): Promise<{ examined: number; changed: number }> {
+  if (!(await isAccountingEnabled(company))) return { examined: 0, changed: 0 };
+  const startedAt = new Date();
+  const refs = await allSourceRefs(company.id);
+  const changed = await syncRefs(company, refs);
+  await prisma.company.update({ where: { id: company.id }, data: { accountingSyncedAt: startedAt, accountingFullSyncAt: startedAt, accountingBackfillAt: null } });
   return { examined: refs.length, changed };
 }
+
+/**
+ * Pièces modifiées depuis une date (avec une marge), y compris celles dont le client ou le
+ * fournisseur a changé (libellés des comptes auxiliaires). Les autres changements (exercices,
+ * paramètres) sont rattrapés par la synchronisation complète hebdomadaire.
+ */
+async function changedSourceRefs(companyId: string, since: Date): Promise<SourceRef[]> {
+  const after = { gte: since };
+  const [invoices, payments, purchases, transactions, accounts, vatPeriods, assets] = await Promise.all([
+    prisma.invoice.findMany({ where: { companyId, number: { not: null }, OR: [{ updatedAt: after }, { customer: { updatedAt: after } }] }, select: { id: true } }),
+    prisma.payment.findMany({ where: { companyId, createdAt: after }, select: { id: true } }),
+    prisma.purchase.findMany({ where: { companyId, OR: [{ updatedAt: after }, { supplier: { updatedAt: after } }] }, select: { id: true } }),
+    prisma.bankTransaction.findMany({ where: { companyId, updatedAt: after }, select: { id: true } }),
+    prisma.bankAccount.findMany({ where: { companyId, updatedAt: after }, select: { id: true } }),
+    prisma.vatPeriod.findMany({ where: { companyId, updatedAt: after }, select: { id: true } }),
+    prisma.fixedAsset.findMany({ where: { companyId, updatedAt: after }, select: { id: true, status: true, depreciations: { select: { fiscalYearId: true } } } }),
+  ]);
+  const refs: SourceRef[] = [
+    ...accounts.map((r) => ({ type: "OPENING" as const, id: r.id })),
+    ...invoices.map((r) => ({ type: "INVOICE" as const, id: r.id })),
+    ...payments.map((r) => ({ type: "PAYMENT" as const, id: r.id })),
+    ...purchases.map((r) => ({ type: "PURCHASE" as const, id: r.id })),
+    ...transactions.map((r) => ({ type: "BANK_TRANSACTION" as const, id: r.id })),
+    ...vatPeriods.map((r) => ({ type: "VAT_RETURN" as const, id: r.id })),
+    ...[...new Set(assets.flatMap((a) => a.depreciations.map((d) => d.fiscalYearId)))].map((id) => ({ type: "DEPRECIATION" as const, id })),
+    ...assets.filter((a) => a.status === "DISPOSED").map((a) => ({ type: "ASSET_DISPOSAL" as const, id: a.id })),
+  ];
+  return [...new Map(refs.map((r) => [`${r.type}:${r.id}`, r])).values()];
+}
+
+const FULL_SYNC_INTERVAL = 7 * 86400_000;
+/** Marge de recouvrement de la passe incrémentale (transactions longues, horloges). */
+const INCREMENTAL_MARGIN = 3600_000;
+
+/**
+ * Filet de sécurité quotidien (chaque opération synchronise déjà ses propres écritures) :
+ * passe incrémentale sur les pièces modifiées depuis la dernière passe, et passe complète si la
+ * dernière date de plus d'une semaine, si une synchronisation a échoué entre-temps ou si une reprise
+ * d'historique a été interrompue.
+ */
+export async function dailyAccountingSync(company: CompanyRef, now = new Date()): Promise<{ mode: "full" | "incremental" | "disabled"; examined: number; changed: number }> {
+  if (!(await isAccountingEnabled(company))) return { mode: "disabled", examined: 0, changed: 0 };
+  const markers = await prisma.company.findUniqueOrThrow({ where: { id: company.id }, select: { accountingSyncedAt: true, accountingFullSyncAt: true, accountingBackfillAt: true } });
+  const failures = markers.accountingSyncedAt
+    ? await prisma.applicationError.count({ where: { path: `accounting-sync:${company.id}`, createdAt: { gte: markers.accountingSyncedAt } } })
+    : 0;
+  const full = !markers.accountingSyncedAt || !markers.accountingFullSyncAt || now.getTime() - markers.accountingFullSyncAt.getTime() >= FULL_SYNC_INTERVAL || failures > 0 || markers.accountingBackfillAt !== null;
+  if (full) return { mode: "full", ...(await resyncAll(company)) };
+  const startedAt = new Date();
+  const refs = await changedSourceRefs(company.id, new Date(markers.accountingSyncedAt!.getTime() - INCREMENTAL_MARGIN));
+  const changed = await syncRefs(company, refs);
+  await prisma.company.update({ where: { id: company.id }, data: { accountingSyncedAt: startedAt } });
+  return { mode: "incremental", examined: refs.length, changed };
+}
+
+/** Au-delà de ce nombre de pièces, la reprise de l'historique se fait en arrière-plan. */
+export const BACKFILL_INLINE_LIMIT = 1000;
 
 /**
  * Comptabilité prête à être consultée ou saisie : plan comptable et journaux en
@@ -258,5 +323,31 @@ export async function ensureAccountingReady(company: CompanyRef): Promise<void> 
       { timeout: 30_000, maxWait: 20_000 },
     ),
   );
-  if (fresh) await resyncAll(company);
+  if (fresh) await backfillHistory(company);
+}
+
+/**
+ * Reprise de l'historique à la première utilisation : immédiate pour un volume modeste, sinon
+ * après l'envoi de la réponse (la page s'affiche aussitôt, un bandeau signale la reprise en cours ;
+ * si le serveur s'arrête avant la fin, la tâche quotidienne la reprend intégralement).
+ */
+async function backfillHistory(company: CompanyRef): Promise<void> {
+  const refs = await allSourceRefs(company.id);
+  if (refs.length <= BACKFILL_INLINE_LIMIT) {
+    await resyncAll(company);
+    return;
+  }
+  await prisma.company.update({ where: { id: company.id }, data: { accountingBackfillAt: new Date() } });
+  const run = () =>
+    resyncAll(company).catch(async (error: Error) => {
+      console.error("[comptabilité] reprise de l'historique", company.id, error);
+      await prisma.applicationError.create({ data: { message: `Reprise de l'historique comptable : ${error.message}`.slice(0, 5000), stack: error.stack?.slice(0, 20000), path: `accounting-sync:${company.id}` } }).catch(() => undefined);
+    });
+  try {
+    const { after } = await import("next/server");
+    after(run);
+  } catch {
+    // Hors requête (tâches, tests) : exécution immédiate.
+    await run();
+  }
 }

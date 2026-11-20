@@ -109,23 +109,37 @@ export async function trialBalanceCsv(access: CompanyAccess, filter: ReportFilte
 
 // --- Grand livre --------------------------------------------------------------------------
 
-type LedgerLineRow = { id: string; number: string; label: string; lineLabel: string; entryId: string; entryNumber: number | null; date: Date; journal: string; pieceRef: string | null; status: string; debit: Prisma.Decimal; credit: Prisma.Decimal; aux: string | null; letter: string | null };
+type LedgerLineRow = {
+  id: string; number: string; label: string; lineLabel: string; entryId: string; entryNumber: number | null; date: Date; journal: string; pieceRef: string | null; status: string;
+  debit: Prisma.Decimal; credit: Prisma.Decimal; aux: string | null; letter: string | null;
+  /** Cumul débit − crédit du compte jusqu'à cette ligne incluse (fonction de fenêtre). */
+  running: Prisma.Decimal; accountDebit: Prisma.Decimal; accountCredit: Prisma.Decimal; totalLines: bigint;
+};
 
-async function ledgerRows(access: CompanyAccess, period: ResolvedPeriod, options: { includeDrafts: boolean; account?: string; journalId?: string; limit?: number }) {
+/**
+ * Lignes du grand livre, paginées. Les cumuls par compte (solde progressif, totaux du compte sur la
+ * période) sont calculés par la base avec des fonctions de fenêtre : une page affiche des soldes et
+ * des totaux exacts, quel que soit le nombre de lignes qui la précèdent.
+ */
+async function ledgerRows(access: CompanyAccess, period: ResolvedPeriod, options: { includeDrafts: boolean; account?: string; journalId?: string; offset: number; limit: number }) {
   const accountFilter = options.account ? Prisma.sql` AND a.number LIKE ${`${options.account}%`}` : Prisma.sql``;
   const journalFilter = options.journalId ? Prisma.sql` AND e.journalId = ${options.journalId}` : Prisma.sql``;
   return prisma.$queryRaw<LedgerLineRow[]>`
     SELECT l.id AS id, a.number AS number, a.label AS label, l.label AS lineLabel, e.id AS entryId, e.entryNumber AS entryNumber,
            e.date AS date, j.code AS journal, e.pieceRef AS pieceRef, e.status AS status, l.debit AS debit, l.credit AS credit,
-           l.auxiliaryNumber AS aux, l.letter AS letter
+           l.auxiliaryNumber AS aux, l.letter AS letter,
+           SUM(l.debit - l.credit) OVER (PARTITION BY a.number ORDER BY e.date, COALESCE(e.entryNumber, 2147483647), e.createdAt, l.position, l.id ROWS UNBOUNDED PRECEDING) AS running,
+           SUM(l.debit) OVER (PARTITION BY a.number) AS accountDebit,
+           SUM(l.credit) OVER (PARTITION BY a.number) AS accountCredit,
+           COUNT(*) OVER () AS totalLines
     FROM accounting_entry_lines l
     INNER JOIN accounting_entries e ON e.id = l.entryId
     INNER JOIN accounting_accounts a ON a.id = l.accountId
     INNER JOIN accounting_journals j ON j.id = e.journalId
     WHERE l.companyId = ${access.company.id} AND e.fiscalYearId = ${period.fiscalYear.id}
       AND e.date BETWEEN ${period.from} AND ${period.to}${statusSql(options.includeDrafts)}${accountFilter}${journalFilter}
-    ORDER BY a.number, e.date, COALESCE(e.entryNumber, 2147483647), e.createdAt, l.position
-    LIMIT ${options.limit ?? 20000}`;
+    ORDER BY a.number, e.date, COALESCE(e.entryNumber, 2147483647), e.createdAt, l.position, l.id
+    LIMIT ${options.limit} OFFSET ${options.offset}`;
 }
 
 async function openingBalances(access: CompanyAccess, period: ResolvedPeriod, includeDrafts: boolean, account?: string) {
@@ -145,31 +159,47 @@ export type LedgerAccount = {
   accountNumber: string;
   accountLabel: string;
   opening: string;
+  /** Totaux et solde du compte sur toute la période (pas seulement la page affichée). */
   debit: string;
   credit: string;
   closing: string;
+  /** La page commence ou finit au milieu des lignes du compte. */
+  continuedFromPrevious: boolean;
+  continuesOnNext: boolean;
   lines: Array<{ id: string; entryId: string; date: string; journal: string; entryNumber: number | null; pieceRef: string | null; label: string; auxiliaryNumber: string | null; debit: string; credit: string; balance: string; letter: string | null; draft: boolean }>;
 };
 
-export async function generalLedger(access: CompanyAccess, filter: ReportFilter = {}) {
+export const LEDGER_PAGE_SIZE = 500;
+
+export async function generalLedger(access: CompanyAccess, filter: ReportFilter = {}, paging: { page?: number; pageSize?: number } = {}) {
   const period = await resolvePeriod(access, filter);
   const includeDrafts = filter.includeDrafts ?? true;
-  const [rows, openings] = await Promise.all([ledgerRows(access, period, { includeDrafts, account: filter.account, journalId: filter.journalId }), openingBalances(access, period, includeDrafts, filter.account)]);
+  const pageSize = paging.pageSize ?? LEDGER_PAGE_SIZE;
+  const page = Math.max(1, paging.page ?? 1);
+  const [rows, openings] = await Promise.all([
+    ledgerRows(access, period, { includeDrafts, account: filter.account, journalId: filter.journalId, offset: (page - 1) * pageSize, limit: pageSize }),
+    openingBalances(access, period, includeDrafts, filter.account),
+  ]);
   const accounts = new Map<string, LedgerAccount>();
-  const running = new Map<string, Prisma.Decimal>();
-  for (const row of rows) {
+  rows.forEach((row, index) => {
+    const opening = dec(openings.get(row.number));
     let account = accounts.get(row.number);
     if (!account) {
-      const opening = dec(openings.get(row.number));
-      running.set(row.number, opening);
-      account = { accountNumber: row.number, accountLabel: row.label, opening: toMoneyString(opening), debit: "0.00", credit: "0.00", closing: "0.00", lines: [] };
+      const closingTotal = opening.plus(dec(row.accountDebit)).minus(dec(row.accountCredit));
+      account = {
+        accountNumber: row.number,
+        accountLabel: row.label,
+        opening: toMoneyString(opening),
+        debit: toMoneyString(row.accountDebit),
+        credit: toMoneyString(row.accountCredit),
+        closing: toMoneyString(closingTotal),
+        // Première ligne du compte sur cette page : y a-t-il des lignes avant (page précédente) ?
+        continuedFromPrevious: index === 0 && !dec(row.running).equals(dec(row.debit).minus(dec(row.credit))),
+        continuesOnNext: false,
+        lines: [],
+      };
       accounts.set(row.number, account);
     }
-    const balance = dec(running.get(row.number)).plus(dec(row.debit)).minus(dec(row.credit));
-    running.set(row.number, balance);
-    account.debit = toMoneyString(dec(account.debit).plus(dec(row.debit)));
-    account.credit = toMoneyString(dec(account.credit).plus(dec(row.credit)));
-    account.closing = toMoneyString(balance);
     account.lines.push({
       id: row.id,
       entryId: row.entryId,
@@ -181,16 +211,23 @@ export async function generalLedger(access: CompanyAccess, filter: ReportFilter 
       auxiliaryNumber: row.aux,
       debit: toMoneyString(row.debit),
       credit: toMoneyString(row.credit),
-      balance: toMoneyString(balance),
+      balance: toMoneyString(opening.plus(dec(row.running))),
       letter: row.letter,
       draft: row.status === "DRAFT",
     });
+  });
+  const totalLines = rows.length ? Number(rows[0].totalLines) : 0;
+  const last = rows.at(-1);
+  if (last && page * pageSize < totalLines) {
+    // Le dernier compte de la page continue si son cumul n'a pas atteint le total du compte sur la période.
+    accounts.get(last.number)!.continuesOnNext = !dec(last.running).equals(dec(last.accountDebit).minus(dec(last.accountCredit)));
   }
-  return { period, includeDrafts, accounts: [...accounts.values()], truncated: rows.length >= 20000 };
+  return { period, includeDrafts, accounts: [...accounts.values()], pagination: { page, pageSize, totalLines, pages: Math.max(1, Math.ceil(totalLines / pageSize)) } };
 }
 
 export async function generalLedgerCsv(access: CompanyAccess, filter: ReportFilter = {}): Promise<string> {
-  const ledger = await generalLedger(access, filter);
+  // Export complet : toutes les lignes, sans pagination.
+  const ledger = await generalLedger(access, filter, { page: 1, pageSize: 1_000_000 });
   return toCsv(
     ["Compte", "Intitulé du compte", "Date", "Journal", "N° d'écriture", "Pièce", "Libellé", "Compte auxiliaire", "Débit", "Crédit", "Solde", "Lettrage", "Statut"],
     ledger.accounts.flatMap((a) =>
