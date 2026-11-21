@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertTriangleIcon, ArrowLeftIcon, FileCode2Icon, InfoIcon } from "lucide-react";
 import { buildFacturX } from "@/server/modules/invoicing/facturx";
+import { getInvoiceEInvoicing } from "@/server/modules/einvoicing/service";
 import { requireCompany } from "@/server/auth/guards";
 import { getInvoiceDetail, getInvoiceHistory, serializeInvoice } from "@/server/modules/invoicing/invoices";
 import { defaultInvoiceMessage } from "@/server/modules/invoicing/sending";
@@ -14,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DocumentLines } from "@/components/app/billing/document-summary";
 import { DeletePaymentButton, InvoiceActions } from "@/components/app/billing/invoice-actions";
 import { HistoryList, InvoiceStatusBadge } from "@/components/app/billing/shared";
+import { InvoiceEInvoiceCard } from "@/components/app/einvoicing/einvoicing-view";
 
 export const metadata: Metadata = { title: "Facture" };
 
@@ -22,7 +24,8 @@ type Props = { params: Promise<{ invoiceId: string }> };
 export default async function InvoicePage({ params }: Props) {
   const [{ access }, { invoiceId }] = await Promise.all([requireCompany("invoices:read"), params]);
   const detail = await getInvoiceDetail(access, invoiceId);
-  const [history, vatRates] = await Promise.all([getInvoiceHistory(access, invoiceId), listVatRates(access)]);
+  // Dépôt sur une plateforme agréée : bloc absent tant qu'aucune plateforme n'est raccordée.
+  const [history, vatRates, eInvoice] = await Promise.all([getInvoiceHistory(access, invoiceId), listVatRates(access), getInvoiceEInvoicing(access, invoiceId)]);
   const invoice = serializeInvoice(detail);
   const draft = invoice.status === "DRAFT";
   const creditNote = invoice.type === "CREDIT_NOTE";
@@ -147,6 +150,7 @@ export default async function InvoicePage({ params }: Props) {
         </div>
 
         <div className="grid content-start gap-6">
+          {eInvoice && !draft ? <InvoiceEInvoiceCard companyId={access.company.id} invoiceId={invoice.id} view={eInvoice} canIssue={access.permissions.has("invoices:issue")} /> : null}
           <Card>
             <CardHeader>
               <CardTitle>Informations</CardTitle>

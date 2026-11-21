@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export function PurchasesTabs({ current }: { current: "factures" | "fournisseurs" }) {
+/** `einvoicing` : onglet des factures reçues, présent seulement lorsqu'une plateforme agréée est raccordée. */
+export function PurchasesTabs({ current, einvoicing = false }: { current: "factures" | "recues" | "fournisseurs"; einvoicing?: boolean }) {
   const tabs = [
     { key: "factures", label: "Factures d'achat", href: "/app/achats" },
+    ...(einvoicing ? [{ key: "recues", label: "Factures reçues", href: "/app/achats/factures-recues" }] : []),
     { key: "fournisseurs", label: "Fournisseurs", href: "/app/achats/fournisseurs" },
-  ] as const;
+  ];
   return (
     <nav aria-label="Sections des achats" className="mb-6 flex flex-wrap gap-1 rounded-xl border bg-card p-1 shadow-xs">
       {tabs.map((tab) => (

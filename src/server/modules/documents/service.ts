@@ -291,6 +291,32 @@ export async function archiveInvoicePdf(companyId: string, invoice: { id: string
   }
 }
 
+/**
+ * Classe un fichier reçu automatiquement (appel système, sans utilisateur), par exemple le PDF d'une
+ * facture électronique reçue d'un fournisseur. Un fichier déjà présent n'est pas stocké deux fois.
+ */
+export async function storeSystemDocument(companyId: string, input: { bytes: Buffer; fileName: string; category: DocumentCategory; documentDate: Date | null; detail: string }): Promise<string> {
+  if (input.bytes.length === 0 || input.bytes.length > MAX_DOCUMENT_BYTES) throw errors.badRequest("FILE_TOO_LARGE", "Fichier vide ou trop volumineux.");
+  const type = detectFileType(input.bytes);
+  if (!type) throw errors.badRequest("UNSUPPORTED_FILE_TYPE", "Format non pris en charge : seuls les fichiers PDF, JPEG et PNG sont acceptés.");
+  const checksum = sha256Hex(input.bytes);
+  const existing = await prisma.document.findFirst({ where: { companyId, checksumSha256: checksum, deletedAt: null }, select: { id: true } });
+  if (existing) return existing.id;
+  await assertFileIsSafe(input.bytes);
+  const storageKey = storageKeyFor(companyId);
+  await putEncrypted(storageKey, input.bytes);
+  try {
+    const document = await prisma.document.create({
+      data: { companyId, name: displayName(input.fileName), originalFileName: input.fileName.slice(0, 255), mimeType: type.mimeType, sizeBytes: input.bytes.length, storageKey, checksumSha256: checksum, category: input.category, documentDate: input.documentDate },
+    });
+    await recordAudit({ action: "document.upload", companyId, entityType: "Document", entityId: document.id, metadata: { detail: input.detail, checksum } });
+    return document.id;
+  } catch (error) {
+    await storage().delete(storageKey).catch(() => undefined);
+    throw error;
+  }
+}
+
 // --- Modification, suppression ----------------------------------------------------------
 
 async function assertNotLocked(access: CompanyAccess, documentId: string) {

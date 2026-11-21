@@ -80,6 +80,8 @@ Ce qui fonctionne réellement aujourd'hui :
 
 - **Facture électronique Factur-X** — chaque facture, acompte ou avoir émis est produit au format Factur-X (PDF/A-3
   avec XML EN 16931), validé en test par les schémas et règles officiels ; le XML est téléchargeable depuis la facture.
+  Le module de transmission par plateforme agréée (file de dépôt, cycle de vie, factures reçues) est prêt mais
+  **masqué** : aucune plateforme n'est encore raccordée.
 
 La synchronisation bancaire nécessite un contrat Bridge (identifiants d'application et secret de webhook) ; elle
 est testée contre un faux serveur conforme à la documentation de l'API, pas encore contre Bridge lui-même. La

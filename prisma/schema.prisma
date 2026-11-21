@@ -284,11 +284,14 @@ model Company {
   accountingSyncedAt       DateTime?
   accountingFullSyncAt     DateTime?
   accountingBackfillAt     DateTime?
+  /// Réception des factures électroniques par la plateforme agréée de ComptaPro Digital, activée par le propriétaire.
+  einvoicingActivatedAt    DateTime?
+  einvoicingActivatedById  String?
   createdById              String
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
 
-  createdBy             User                   @relation("CompanyCreator", fields: [createdById], references: [id])
+  createdBy             User                     @relation("CompanyCreator", fields: [createdById], references: [id])
   logo                  CompanyLogo?
   members               CompanyUser[]
   invitations           CompanyInvitation[]
@@ -308,6 +311,9 @@ model Company {
   bankImports           BankImport[]
   bankConnections       BankConnection[]
   bankConnectSessions   BankConnectSession[]
+  einvoiceTransmissions EInvoiceTransmission[]
+  einvoiceIncoming      EInvoiceIncoming[]
+  einvoiceEvents        EInvoiceLifecycleEvent[]
   transactionCategories TransactionCategory[]
   categorizationRules   CategorizationRule[]
   accountingAccounts    AccountingAccount[]
@@ -721,12 +727,139 @@ enum EInvoiceFormat {
   CII
 }
 
+/// Situation de la facture électronique émise, résumée à partir des statuts du cycle de vie.
 enum EInvoiceStatus {
   NOT_APPLICABLE
+  /// En file d'envoi vers la plateforme agréée
   PENDING
+  /// Déposée, émise ou mise à disposition du client (200 à 203)
   DEPOSITED
+  /// Rejetée par la plateforme (213) : la facture n'est pas réputée émise
   REJECTED
+  /// Prise en charge, approuvée, complétée ou paiement transmis (204, 205, 206, 209, 211)
   ACCEPTED
+  /// En litige ou suspendue (207, 208)
+  DISPUTED
+  /// Refusée par le client (210)
+  REFUSED
+  /// Encaissée (212)
+  PAID
+}
+
+enum EInvoiceTransmissionStatus {
+  QUEUED
+  SENDING
+  SENT
+  /// Échec définitif après plusieurs tentatives
+  FAILED
+}
+
+/// File d'envoi des factures électroniques vers la plateforme agréée (une ligne par dépôt).
+model EInvoiceTransmission {
+  id            String                     @id @default(cuid())
+  companyId     String
+  invoiceId     String
+  platform      String                     @db.VarChar(40)
+  format        EInvoiceFormat
+  status        EInvoiceTransmissionStatus @default(QUEUED)
+  attempts      Int                        @default(0)
+  nextAttemptAt DateTime                   @default(now())
+  lastError     String?                    @db.VarChar(500)
+  /// Identifiant du dépôt chez la plateforme
+  platformRef   String?                    @db.VarChar(191)
+  /// Empreinte du fichier transmis (original archivé de la facture)
+  fileChecksum  String?                    @db.Char(64)
+  requestedById String?
+  sentAt        DateTime?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  company Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice Invoice                  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  events  EInvoiceLifecycleEvent[]
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, invoiceId])
+  @@index([platform, platformRef])
+  @@map("einvoice_transmissions")
+}
+
+enum EInvoiceIncomingStatus {
+  /// Reçue, à traiter
+  RECEIVED
+  /// Enregistrée en facture d'achat
+  PURCHASE_CREATED
+  /// Refusée (statut 210 transmis au fournisseur)
+  REFUSED
+}
+
+/// Facture électronique reçue d'un fournisseur par la plateforme agréée.
+model EInvoiceIncoming {
+  id              String                 @id @default(cuid())
+  companyId       String
+  platform        String                 @db.VarChar(40)
+  platformRef     String                 @db.VarChar(191)
+  format          EInvoiceFormat
+  sellerName      String                 @db.VarChar(191)
+  sellerSiren     String?                @db.Char(9)
+  sellerVatNumber String?                @db.VarChar(20)
+  number          String                 @db.VarChar(100)
+  issueDate       DateTime               @db.Date
+  dueDate         DateTime?              @db.Date
+  currency        String                 @default("EUR") @db.Char(3)
+  totalExclTax    Decimal                @db.Decimal(15, 2)
+  totalVat        Decimal                @db.Decimal(15, 2)
+  totalInclTax    Decimal                @db.Decimal(15, 2)
+  /// XML structuré reçu, chiffré dans le stockage
+  xmlStorageKey   String                 @db.VarChar(512)
+  xmlChecksum     String                 @db.Char(64)
+  /// PDF reçu (Factur-X), classé dans les documents
+  documentId      String?
+  status          EInvoiceIncomingStatus @default(RECEIVED)
+  /// Dernier statut du cycle de vie transmis au fournisseur
+  lastStatusCode  Int?
+  purchaseId      String?
+  receivedAt      DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  company  Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document Document?                @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  purchase Purchase?                @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  events   EInvoiceLifecycleEvent[]
+
+  @@unique([platform, platformRef])
+  @@index([companyId, status])
+  @@index([documentId])
+  @@index([purchaseId])
+  @@map("einvoice_incoming")
+}
+
+/// Statut du cycle de vie d'une facture électronique (émise ou reçue), tel que reçu ou transmis.
+model EInvoiceLifecycleEvent {
+  id             String   @id @default(cuid())
+  companyId      String
+  transmissionId String?
+  incomingId     String?
+  /// Code du cycle de vie (200 Déposée … 213 Rejetée)
+  code           Int
+  reason         String?  @db.VarChar(500)
+  /// Auteur du statut : PLATFORM, BUYER (client), SELLER (fournisseur) ou COMPANY (l'entreprise elle-même)
+  source         String   @db.VarChar(20)
+  occurredAt     DateTime
+  createdById    String?
+  /// Empreinte (pièce, code, date) : un statut reçu plusieurs fois n'est enregistré qu'une fois
+  dedupKey       String   @unique @db.Char(64)
+  createdAt      DateTime @default(now())
+
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transmission EInvoiceTransmission? @relation(fields: [transmissionId], references: [id], onDelete: Cascade)
+  incoming     EInvoiceIncoming?     @relation(fields: [incomingId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([transmissionId])
+  @@index([incomingId])
+  @@map("einvoice_lifecycle_events")
 }
 
 model Invoice {
@@ -775,14 +908,15 @@ model Invoice {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
-  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer         Customer          @relation(fields: [customerId], references: [id])
-  quote            Quote?            @relation(fields: [quoteId], references: [id], onDelete: SetNull)
-  originalInvoice  Invoice?          @relation("CreditNotes", fields: [originalInvoiceId], references: [id])
-  creditNotes      Invoice[]         @relation("CreditNotes")
-  recurringInvoice RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id], onDelete: SetNull)
-  items            InvoiceItem[]
-  payments         Payment[]
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer              Customer               @relation(fields: [customerId], references: [id])
+  quote                 Quote?                 @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  originalInvoice       Invoice?               @relation("CreditNotes", fields: [originalInvoiceId], references: [id])
+  creditNotes           Invoice[]              @relation("CreditNotes")
+  recurringInvoice      RecurringInvoice?      @relation(fields: [recurringInvoiceId], references: [id], onDelete: SetNull)
+  items                 InvoiceItem[]
+  payments              Payment[]
+  einvoiceTransmissions EInvoiceTransmission[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -949,6 +1083,7 @@ model Purchase {
   supplier         Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   category         TransactionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   bankTransactions BankTransaction[]
+  einvoiceIncoming EInvoiceIncoming[]
 
   @@index([companyId, issueDate])
   @@index([companyId, status])
@@ -1546,8 +1681,9 @@ model Document {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  links   DocumentLink[]
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  links            DocumentLink[]
+  einvoiceIncoming EInvoiceIncoming[]
 
   @@index([companyId, category])
   @@index([companyId, createdAt])

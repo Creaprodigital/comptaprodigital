@@ -9,6 +9,7 @@ import { runAutomaticReminders } from "../src/server/modules/invoicing/sending";
 import { purgeDeletedDocuments } from "../src/server/modules/documents/service";
 import { dailyAccountingSync } from "../src/server/modules/accounting/sync";
 import { syncAllBankConnections } from "../src/server/modules/bank/connections";
+import { processEInvoiceQueue, syncEInvoicing } from "../src/server/modules/einvoicing/service";
 import { runTrialJobs } from "../src/server/billing/service";
 
 /**
@@ -27,6 +28,9 @@ async function main() {
   console.log(`Essais : ${trials.reminded} rappel(s) envoyé(s), ${trials.expired} essai(s) terminé(s)`);
   const bank = await syncAllBankConnections();
   console.log(`Synchronisation bancaire : ${bank.connections} connexion(s), ${bank.imported} opération(s) importée(s), ${bank.errors} erreur(s)`);
+  const einvoiceQueue = await processEInvoiceQueue();
+  const einvoiceSync = await syncEInvoicing();
+  console.log(`Facturation électronique : ${einvoiceQueue.sent} dépôt(s), ${einvoiceQueue.retried} à retenter, ${einvoiceQueue.failed} abandonné(s) ; ${einvoiceSync.statuses} statut(s), ${einvoiceSync.received} facture(s) reçue(s)`);
   // Filet de sécurité : recalcul des écritures automatiques (sans effet si tout est à jour).
   const companies = await prisma.company.findMany({ where: { status: "ACTIVE", accountingMode: "DOUBLE_ENTRY" }, select: { id: true, fiscalYearStartMonth: true, accountingMode: true } });
   let accountingChanges = 0;

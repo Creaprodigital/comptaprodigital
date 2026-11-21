@@ -21,6 +21,7 @@
     "postinstall": "prisma generate",
     "e2e:server": "prisma migrate deploy && tsx prisma/seed.ts && next build && next start -p 3100",
     "jobs:daily": "tsx scripts/run-jobs.ts",
+    "jobs:einvoicing": "tsx scripts/run-einvoicing.ts",
     "keys:rotate": "tsx scripts/rotate-encryption-key.ts",
     "check:bundle": "node scripts/check-client-bundle.mjs",
     "backup:verify": "bash scripts/verify-restore.sh",

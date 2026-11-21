@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DownloadIcon } from "lucide-react";
 import { requireCompany } from "@/server/auth/guards";
+import { einvoicingAvailable } from "@/server/modules/einvoicing/service";
 import { listCategories } from "@/server/modules/bank/categories";
 import { listPurchases, listSuppliers } from "@/server/modules/purchases/service";
 import { todayInParis } from "@/lib/dates";
@@ -46,7 +47,7 @@ export default async function PurchasesPage({ searchParams }: Props) {
           </>
         }
       />
-      <PurchasesTabs current="factures" />
+      <PurchasesTabs current="factures" einvoicing={einvoicingAvailable()} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <FilterTabs basePath="/app/achats" current={status ?? "all"} query={params.q} options={[{ value: "all", label: "Toutes" }, { value: "TO_PAY", label: "À payer" }, { value: "overdue", label: "En retard" }, { value: "PAID", label: "Payées" }, { value: "CANCELLED", label: "Annulées" }]} />
         <SearchForm action="/app/achats" query={params.q} placeholder="Fournisseur, numéro ou objet" hidden={{ status }} />

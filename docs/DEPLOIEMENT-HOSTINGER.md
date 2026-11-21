@@ -176,6 +176,13 @@ Les factures récurrentes et les relances automatiques sont produites par une t�
 Sans cette planification, les récurrences ne génèrent aucune facture et aucune relance automatique ne part ; les
 relances manuelles restent disponibles depuis chaque facture.
 
+Lorsqu'une plateforme de facturation électronique sera raccordée, planifiez aussi sa tâche toutes les 15 minutes
+(dépôts à retenter, statuts, factures reçues) ; sans plateforme, elle ne fait rien :
+
+```cron
+*/15 * * * * cd /opt/comptapro && docker compose run --rm jobs npx tsx scripts/run-einvoicing.ts >> /var/log/comptapro-einvoicing.log 2>&1
+```
+
 ### Abonnements Stripe
 
 1. Dans le tableau de bord Stripe (mode test d'abord), copiez la clé secrète dans `STRIPE_SECRET_KEY`.

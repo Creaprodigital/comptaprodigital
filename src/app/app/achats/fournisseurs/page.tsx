@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireCompany } from "@/server/auth/guards";
+import { einvoicingAvailable } from "@/server/modules/einvoicing/service";
 import { listSuppliers } from "@/server/modules/purchases/service";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/app/page-header";
@@ -18,7 +19,7 @@ export default async function SuppliersPage({ searchParams }: Props) {
   return (
     <>
       <PageHeader title="Achats" description="Vos fournisseurs et ce qui leur reste dû." />
-      <PurchasesTabs current="fournisseurs" />
+      <PurchasesTabs current="fournisseurs" einvoicing={einvoicingAvailable()} />
       <div className="mb-4">
         <FilterTabs basePath="/app/achats/fournisseurs" current={archived ? "archived" : "all"} options={[{ value: "all", label: "Actifs" }, { value: "archived", label: "Archivés" }]} />
       </div>

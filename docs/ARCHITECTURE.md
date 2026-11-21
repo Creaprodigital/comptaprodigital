@@ -192,6 +192,36 @@ plateformes agréées »). Le PDF d'une facture émise est régénéré à la de
 tel qu'émis est archivé dans les documents de l'entreprise (`invoices.pdfDocumentId`) et ne peut être ni modifié ni
 supprimé.
 
+### Facturation électronique : plateformes agréées
+
+Module générique (`src/server/modules/einvoicing/*`), prêt à recevoir le connecteur de la plateforme agréée (PA,
+ex-PDP) qui sera retenue. **Aucune plateforme n'est raccordée** : `getEInvoicePlatform()` retourne `null`, toutes les
+routes répondent 503 et rien n'apparaît dans l'interface (ni bloc sur la facture, ni onglet « Factures reçues »).
+
+- *Interface* (`platform.ts`) : dépôt d'un fichier avec clé d'idempotence, statuts du cycle de vie et factures
+  reçues depuis une date, envoi d'un statut, authentification des webhooks. Un connecteur l'implémente ; il est
+  choisi dans `getEInvoicePlatform()`.
+- *Émission* (`service.ts`) : à la demande de l'utilisateur (`invoices:issue`), pour une facture émise dont
+  l'original archivé est un Factur-X EN 16931, adressée à une entreprise française identifiée par son SIREN (les
+  autres opérations relèvent du e-reporting, non couvert). File `einvoice_transmissions` : première tentative
+  immédiate, puis nouvelles tentatives espacées (1 min à 12 h), abandon journalisé après six échecs, reprise d'un
+  envoi interrompu (la clé d'idempotence = identifiant du dépôt évite un double dépôt). Le fichier transmis est
+  l'original archivé, vérifié par son empreinte. Un dépôt rejeté (213) ou abandonné peut être refait.
+- *Cycle de vie* (`lifecycle.ts`) : codes 200 à 213 (Déposée, …, Refusée, Encaissée, Rejetée). Chaque statut est
+  enregistré une fois (`einvoice_lifecycle_events.dedupKey`) ; la situation de la facture (`eInvoiceStatus`) est
+  celle du statut le plus récent. « Encaissée » (212) n'est jamais transmis automatiquement : l'utilisateur le
+  déclare, une fois la facture réglée.
+- *Réception* : activée par entreprise (`company:update`), pour un SIREN qui ne reçoit que dans une seule entreprise
+  de la plateforme. Les factures reçues (CII ou UBL, `parse.ts`, sans résolution d'entités XML) sont rattachées à
+  cette entreprise ; le XML est conservé chiffré, le PDF classé dans les documents. L'utilisateur les enregistre en
+  achat (fournisseur retrouvé ou créé par son SIREN, catégorie choisie) ou transmet un statut (refus et litige
+  motivés). Une facture reçue sans entreprise destinataire unique, ou illisible, est écartée et journalisée.
+- *Synchronisation* : `npm run jobs:einvoicing` (toutes les 15 minutes) traite la file et récupère statuts et
+  factures reçues (curseur `einvoicing.cursor`, marge d'une heure) ; le webhook `/api/v1/einvoicing/webhook`
+  enregistre les statuts dès leur arrivée.
+- Non couvert : génération UBL ou CII seul (le Factur-X est accepté par les plateformes), e-reporting des
+  opérations hors champ (B2C, international), annuaire central.
+
 ### Tâches quotidiennes
 
 `npm run jobs:daily` (ou `docker compose run --rm jobs`) exécute les factures récurrentes, les relances
@@ -447,7 +477,7 @@ Chaque phase suit le même déroulé : architecture, fichiers, implémentation r
 documentation des variables d'environnement, commit.
 
 - **Phase 6** — ✅ abonnements Stripe et super administration.
-- **Phase 7** — ✅ assistant IA (suggestions soumises à validation) et contrôles automatiques ; intégrations bancaire et de facturation électronique préparées, en attente de prestataires agréés.
+- **Phase 7** — ✅ assistant IA (suggestions soumises à validation) et contrôles automatiques ; synchronisation bancaire par Bridge (activée par ses identifiants) ; module de facturation électronique prêt, masqué en attente du choix de la plateforme agréée.
 - **Phase 8** — ✅ sécurité (anti-rejeu TOTP, rotation de clé, antivirus, SRI partielle), RGPD (effacement, conservation),
   tests (matrice des droits, restauration, secrets du bundle), optimisation mesurée, contrôle de production et
   alertes. Une CSP par nonce a été écartée : incompatible avec le prérendu partiel (voir SECURITE.md).
