@@ -12,6 +12,9 @@ const baseURL = `http://localhost:${PORT}`;
 export const SMTP_PORT = 2526;
 /** Faux serveur de l'API Anthropic (tests de l'assistant IA sans appel réel). */
 export const ANTHROPIC_PORT = 2527;
+/** Faux serveur de l'API Bridge (synchronisation bancaire), avec simulation de la page Bridge Connect. */
+export const BRIDGE_PORT = 2528;
+export const BRIDGE_WEBHOOK_SECRET = "e2e-bridge-webhook-secret";
 export const MAIL_DIR = path.join(__dirname, "test-results", "mails");
 
 const databaseUrl =
@@ -58,6 +61,10 @@ export default defineConfig({
       CONTACT_EMAIL: "support@e2e.test",
       SEED_DEMO: "false",
       INSEE_API_KEY: "",
+      BRIDGE_CLIENT_ID: "client_test",
+      BRIDGE_CLIENT_SECRET: "secret_test",
+      BRIDGE_WEBHOOK_SECRET,
+      BRIDGE_API_BASE: `http://127.0.0.1:${BRIDGE_PORT}`,
     },
   },
 });

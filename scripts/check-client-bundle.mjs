@@ -8,7 +8,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-const SECRET_VARS = ["APP_ENCRYPTION_KEY", "APP_ENCRYPTION_KEY_PREVIOUS", "DATABASE_URL", "SMTP_PASSWORD", "S3_SECRET_ACCESS_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "ANTHROPIC_API_KEY", "INSEE_API_KEY", "SEED_ADMIN_PASSWORD"];
+const SECRET_VARS = ["APP_ENCRYPTION_KEY", "APP_ENCRYPTION_KEY_PREVIOUS", "DATABASE_URL", "SMTP_PASSWORD", "S3_SECRET_ACCESS_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "BRIDGE_CLIENT_SECRET", "BRIDGE_WEBHOOK_SECRET", "ANTHROPIC_API_KEY", "INSEE_API_KEY", "SEED_ADMIN_PASSWORD"];
 const PATTERNS = [/sk_(live|test)_[A-Za-z0-9]{8,}/, /whsec_[A-Za-z0-9]{8,}/, /sk-ant-[A-Za-z0-9_-]{8,}/, /mysql:\/\/[^"'\s]*:[^"'\s]*@/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/];
 
 const roots = [".next/static", ".next/server/app"].filter(Boolean);

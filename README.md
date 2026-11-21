@@ -33,8 +33,9 @@ Ce qui fonctionne réellement aujourd'hui :
 - **Banque** (formules Pro et Business) — comptes bancaires, import de relevés CSV, OFX et camt.053 avec aperçu,
   détection des doublons, saisie manuelle, recherche et filtres, catégorisation (unitaire ou par sélection),
   règles automatiques, rapprochement des encaissements avec les factures (annulable), suivi des dépenses sans
-  justificatif, historique des modifications, export CSV. La synchronisation automatique par un prestataire agréé
-  n'est **pas** disponible : seule son interface d'intégration est préparée.
+  justificatif, historique des modifications, export CSV. Synchronisation automatique par Bridge (agrégateur
+  agréé DSP2) lorsque la plateforme est configurée avec ses identifiants : connexion sur les pages de Bridge,
+  opérations incrémentales par webhooks signés, aucun identifiant bancaire stocké.
 - **Documents** (formules Pro et Business) — ajout de PDF, JPEG et PNG, chiffrés avant stockage (disque local ou
   S3), classement, recherche, association aux opérations, factures et devis, aperçu, téléchargement, historique,
   export ZIP, archivage de l'original de chaque facture émise. La lecture automatique (OCR) n'est pas livrée.
@@ -80,9 +81,9 @@ Ce qui fonctionne réellement aujourd'hui :
 - **Facture électronique Factur-X** — chaque facture, acompte ou avoir émis est produit au format Factur-X (PDF/A-3
   avec XML EN 16931), validé en test par les schémas et règles officiels ; le XML est téléchargeable depuis la facture.
 
-Non livré en phase 7 : la synchronisation bancaire par un prestataire agréé et la transmission des factures
-électroniques via une plateforme agréée nécessitent un contrat avec ces prestataires ; seules leurs interfaces
-d'intégration sont préparées.
+La synchronisation bancaire nécessite un contrat Bridge (identifiants d'application et secret de webhook) ; elle
+est testée contre un faux serveur conforme à la documentation de l'API, pas encore contre Bridge lui-même. La
+transmission des factures électroniques via une plateforme agréée nécessite un contrat avec cette plateforme.
 
 ## Pile technique
 

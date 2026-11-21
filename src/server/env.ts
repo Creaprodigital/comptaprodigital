@@ -58,6 +58,16 @@ const envSchema = z
     /** Réservé aux tests : adresse d'un faux serveur Stripe (interdit en production). */
     STRIPE_API_BASE: z.url().optional(),
     /**
+     * Synchronisation bancaire par Bridge (agrégateur agréé DSP2) : identifiants de l'application
+     * (tableau de bord Bridge) et secret de signature du webhook. Sans identifiants, seul l'import de
+     * relevés est proposé.
+     */
+    BRIDGE_CLIENT_ID: z.string().optional(),
+    BRIDGE_CLIENT_SECRET: z.string().optional(),
+    BRIDGE_WEBHOOK_SECRET: z.string().optional(),
+    /** Réservé aux tests : adresse d'un faux serveur Bridge (interdit en production). */
+    BRIDGE_API_BASE: z.url().optional(),
+    /**
      * Assistant IA (API Anthropic). Sans clé, les fonctions d'IA sont masquées ; les contrôles
      * automatiques sans IA restent disponibles. ANTHROPIC_BASE_URL est lu directement par le SDK.
      */
@@ -80,6 +90,17 @@ const envSchema = z
     }
     if (value.STRIPE_SECRET_KEY && !value.STRIPE_WEBHOOK_SECRET && value.NODE_ENV === "production") {
       ctx.addIssue({ code: "custom", path: ["STRIPE_WEBHOOK_SECRET"], message: "STRIPE_WEBHOOK_SECRET est requis lorsque Stripe est configuré" });
+    }
+    // Faux serveur de test uniquement : en production (y compris les tests de bout en bout, qui tournent
+    // sur un build de production), seule une adresse locale est acceptée.
+    if (value.NODE_ENV === "production" && value.BRIDGE_API_BASE && !/^http:\/\/127\.0\.0\.1:\d+\/?$/.test(value.BRIDGE_API_BASE)) {
+      ctx.addIssue({ code: "custom", path: ["BRIDGE_API_BASE"], message: "BRIDGE_API_BASE est réservé aux tests (faux serveur local)" });
+    }
+    if (Boolean(value.BRIDGE_CLIENT_ID) !== Boolean(value.BRIDGE_CLIENT_SECRET)) {
+      ctx.addIssue({ code: "custom", path: ["BRIDGE_CLIENT_SECRET"], message: "BRIDGE_CLIENT_ID et BRIDGE_CLIENT_SECRET vont ensemble" });
+    }
+    if (value.BRIDGE_CLIENT_ID && !value.BRIDGE_WEBHOOK_SECRET && value.NODE_ENV === "production") {
+      ctx.addIssue({ code: "custom", path: ["BRIDGE_WEBHOOK_SECRET"], message: "BRIDGE_WEBHOOK_SECRET est requis lorsque Bridge est configuré" });
     }
     if (value.STORAGE_DRIVER === "s3") {
       for (const key of ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const) {

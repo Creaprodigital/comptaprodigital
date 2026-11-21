@@ -2,8 +2,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
-import { ANTHROPIC_PORT, MAIL_DIR, SMTP_PORT } from "../../playwright.config";
+import { ANTHROPIC_PORT, BRIDGE_PORT, MAIL_DIR, SMTP_PORT } from "../../playwright.config";
 import { startAutoFake } from "../support/fake-anthropic-auto";
+import { FakeBridge } from "../support/fake-bridge";
 
 /**
  * Serveur SMTP local : l'application envoie ses e-mails par SMTP comme en
@@ -36,7 +37,22 @@ export default async function globalSetup() {
 
   const anthropic = await startAutoFake(ANTHROPIC_PORT);
 
+  // Banque de démonstration : chaque parcours Bridge Connect ajoute un compte courant et deux opérations.
+  // Identifiants uniques d'une exécution à l'autre, comme chez Bridge.
+  const bridge = new FakeBridge((Date.now() % 1_000_000) * 1000);
+  bridge.onConnect = (userUuid, existing) => {
+    if (existing) return existing;
+    const item = bridge.addItem(userUuid);
+    const account = bridge.addAccount(item.id, { name: "Compte pro Bridge", balance: 1500, iban: "FR7630004000031234567890143" });
+    const today = new Date().toISOString().slice(0, 10);
+    bridge.addTransaction(account.id, { amount: 1650, date: today, clean_description: "Virement client Garnier", provider_description: "VIR SEPA GARNIER" });
+    bridge.addTransaction(account.id, { amount: -150, date: today, clean_description: "Abonnement coworking", provider_description: "PRLV SEPA COWORKING" });
+    return item.id;
+  };
+  await bridge.start(BRIDGE_PORT);
+
   return async () => {
+    await bridge.stop();
     await anthropic.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   };

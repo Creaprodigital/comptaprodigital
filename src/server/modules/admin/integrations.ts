@@ -82,13 +82,37 @@ async function aiCheck(): Promise<Check & { model: string; requests30d: number; 
   return { ...base, ok: !call.error, configured: true, detail: call.error ? "Appel à l'API refusé" : `API joignable (${call.ms} ms), modèle ${base.model} disponible`, error: call.error };
 }
 
+/**
+ * Bridge n'offre pas d'appel de contrôle sans utilisateur : l'état repose sur la configuration et sur
+ * les connexions (dernière synchronisation, erreurs), sans appel à l'API.
+ */
+async function bankSyncCheck(): Promise<Check & { active: number; actionRequired: number; failing: number; lastSyncAt: string | null }> {
+  const config = env();
+  const [active, actionRequired, failing, last] = await Promise.all([
+    prisma.bankConnection.count({ where: { status: { not: "REVOKED" } } }),
+    prisma.bankConnection.count({ where: { status: "ACTION_REQUIRED" } }),
+    prisma.bankConnection.count({ where: { status: { not: "REVOKED" }, lastError: { not: null } } }),
+    prisma.bankConnection.findFirst({ where: { lastSyncedAt: { not: null } }, orderBy: { lastSyncedAt: "desc" }, select: { lastSyncedAt: true } }),
+  ]);
+  const base = { active, actionRequired, failing, lastSyncAt: last?.lastSyncedAt?.toISOString() ?? null };
+  if (!config.BRIDGE_CLIENT_ID) return { ...base, ok: false, configured: false, detail: "Non configuré : les comptes sont alimentés par import de relevés uniquement." };
+  const webhook = Boolean(config.BRIDGE_WEBHOOK_SECRET);
+  return {
+    ...base,
+    ok: webhook && failing === 0,
+    configured: true,
+    detail: `Identifiants configurés${webhook ? "" : " — secret de webhook manquant"}${failing ? ` — ${failing} connexion(s) en échec de synchronisation` : ""}`,
+  };
+}
+
 export async function integrationsStatus() {
-  const [database, stripe, smtp, files, ai, lastJob] = await Promise.all([
+  const [database, stripe, smtp, files, ai, bankSync, lastJob] = await Promise.all([
     databaseCheck(),
     stripeCheck(),
     smtpCheck(),
     storageCheck(),
     aiCheck(),
+    bankSyncCheck(),
     prisma.applicationSetting.findUnique({ where: { key: "jobs.daily.last_run" } }),
   ]);
   const job = (lastJob?.value ?? null) as { at?: string; durationMs?: number } | null;
@@ -100,6 +124,7 @@ export async function integrationsStatus() {
     smtp,
     storage: files,
     ai,
+    bankSync,
     insee: { ok: true, configured: Boolean(env().INSEE_API_KEY), detail: env().INSEE_API_KEY ? "Clé d'API Sirene configurée" : "Sans clé : recherche via l'annuaire public des entreprises" },
     dailyJobs: {
       ok: jobAge !== null && jobAge < 36 * 3600_000,

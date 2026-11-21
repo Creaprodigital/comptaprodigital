@@ -192,6 +192,24 @@ relances manuelles restent disponibles depuis chaque facture.
 Sans clé Stripe, les comptes restent en période d'essai : rien n'est facturé ni restreint (`billing.enforcement`
 « auto »).
 
+### Synchronisation bancaire (Bridge)
+
+1. Ouvrez un compte sur le tableau de bord Bridge et créez une application (environnement de test d'abord) ;
+   copiez ses identifiants dans `BRIDGE_CLIENT_ID` et `BRIDGE_CLIENT_SECRET`.
+2. Dans la configuration de l'application Bridge, autorisez le domaine de redirection `https://<APP_DOMAIN>` (le
+   retour du parcours se fait sur `/api/v1/bank/bridge/callback`).
+3. Créez un webhook vers `https://<APP_DOMAIN>/api/v1/bank/bridge/webhook` avec les événements `item.created`,
+   `item.refreshed`, `item.deleted`, `item.account.created`, `item.account.updated`, `item.account.deleted` et
+   `user.deleted` ; copiez son secret (affiché une seule fois) dans `BRIDGE_WEBHOOK_SECRET`. Le bouton « Send a
+   test » doit recevoir une réponse 200.
+4. Redémarrez l'application. Dans une entreprise de test (formule Pro ou Business), Banque > Comptes propose
+   « Connecter une banque » : connectez la banque de démonstration de Bridge et vérifiez comptes, soldes et
+   opérations.
+5. Passez aux identifiants de production une fois les essais concluants, et ajoutez Bridge à la liste des
+   sous-traitants (politique de confidentialité).
+
+Sans identifiants Bridge, seul l'import de relevés est proposé.
+
 ### Assistant IA (Anthropic)
 
 1. Créez une clé d'API dans la console Anthropic (espace de travail dédié à la production, avec une limite de

@@ -306,6 +306,8 @@ model Company {
   bankAccounts          BankAccount[]
   bankTransactions      BankTransaction[]
   bankImports           BankImport[]
+  bankConnections       BankConnection[]
+  bankConnectSessions   BankConnectSession[]
   transactionCategories TransactionCategory[]
   categorizationRules   CategorizationRule[]
   accountingAccounts    AccountingAccount[]
@@ -968,32 +970,111 @@ enum BankProvider {
 }
 
 model BankAccount {
-  id                 String       @id @default(cuid())
-  companyId          String
-  name               String       @db.VarChar(100)
-  bankName           String?      @db.VarChar(100)
-  ibanEncrypted      String?      @db.VarChar(512)
-  ibanLast4          String?      @db.Char(4)
-  bic                String?      @db.VarChar(11)
-  currency           String       @default("EUR") @db.Char(3)
-  openingBalance     Decimal      @default(0) @db.Decimal(15, 2)
-  openingBalanceDate DateTime?    @db.Date
+  id                  String       @id @default(cuid())
+  companyId           String
+  name                String       @db.VarChar(100)
+  bankName            String?      @db.VarChar(100)
+  ibanEncrypted       String?      @db.VarChar(512)
+  ibanLast4           String?      @db.Char(4)
+  bic                 String?      @db.VarChar(11)
+  currency            String       @default("EUR") @db.Char(3)
+  openingBalance      Decimal      @default(0) @db.Decimal(15, 2)
+  openingBalanceDate  DateTime?    @db.Date
   /// Compte comptable associé (512xxx)
-  accountNumber      String?      @db.VarChar(20)
-  provider           BankProvider @default(MANUAL)
-  providerAccountRef String?      @db.VarChar(191)
-  lastSyncedAt       DateTime?
-  isActive           Boolean      @default(true)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  accountNumber       String?      @db.VarChar(20)
+  provider            BankProvider @default(MANUAL)
+  providerAccountRef  String?      @db.VarChar(191)
+  /// Connexion à l'agrégateur qui alimente le compte (NULL : saisie manuelle et imports de relevés).
+  connectionId        String?
+  /// Curseur de synchronisation : horodatage de la dernière opération modifiée reçue du prestataire.
+  providerCursor      String?      @db.VarChar(40)
+  /// Solde communiqué par la banque lors de la dernière synchronisation.
+  providerBalance     Decimal?     @db.Decimal(15, 2)
+  /// Solde d'ouverture déduit du solde bancaire (compte créé par la connexion, non modifié depuis par l'utilisateur).
+  openingFromProvider Boolean      @default(false)
+  /// Compte déjà alimenté par des relevés avant sa connexion : les opérations antérieures à cette date ne sont pas reprises.
+  providerSyncFrom    DateTime?    @db.Date
+  lastSyncedAt        DateTime?
+  isActive            Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  connection   BankConnection?     @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   transactions BankTransaction[]
   imports      BankImport[]
   journals     AccountingJournal[]
 
   @@index([companyId])
+  @@index([companyId, providerAccountRef])
+  @@index([connectionId])
   @@map("bank_accounts")
+}
+
+enum BankConnectionStatus {
+  /// Première synchronisation en cours chez le prestataire
+  SYNCING
+  ACTIVE
+  /// L'utilisateur doit intervenir (authentification forte à renouveler, identifiants modifiés…)
+  ACTION_REQUIRED
+  /// Erreur temporaire du prestataire ou de la banque
+  ERROR
+  /// Consentement révoqué : plus aucune donnée n'est récupérée
+  REVOKED
+}
+
+/// Connexion à une banque via un agrégateur agréé (DSP2). Aucun identifiant bancaire n'est stocké :
+/// seules les références opaques de l'utilisateur et de la connexion chez le prestataire sont conservées.
+model BankConnection {
+  id                      String               @id @default(cuid())
+  companyId               String
+  /// Prestataire (« bridge »)
+  provider                String               @db.VarChar(20)
+  /// Utilisateur chez le prestataire (un par entreprise)
+  providerUserRef         String               @db.VarChar(191)
+  /// Connexion chez le prestataire (item Bridge)
+  providerItemRef         String               @db.VarChar(191)
+  status                  BankConnectionStatus @default(SYNCING)
+  statusCode              Int?
+  statusInfo              String?              @db.VarChar(100)
+  statusDescription       String?              @db.VarChar(500)
+  /// Fin de validité de l'authentification forte (180 jours)
+  authenticationExpiresAt DateTime?
+  lastSyncedAt            DateTime?
+  lastError               String?              @db.VarChar(500)
+  createdById             String?
+  revokedAt               DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accounts BankAccount[]
+
+  @@unique([provider, providerItemRef])
+  @@index([companyId])
+  @@index([provider, providerUserRef])
+  @@map("bank_connections")
+}
+
+/// Parcours de connexion en cours chez le prestataire. Le jeton transmis (paramètre « context ») n'est
+/// conservé que sous forme d'empreinte ; il est à usage unique et expire après une heure.
+model BankConnectSession {
+  id           String    @id @default(cuid())
+  companyId    String
+  userId       String
+  provider     String    @db.VarChar(20)
+  stateHash    String    @unique @db.Char(64)
+  /// Reconnexion d'une connexion existante
+  connectionId String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([expiresAt])
+  @@map("bank_connect_sessions")
 }
 
 enum CategoryKind {

@@ -30,6 +30,9 @@ export type BankAccountView = {
   lastTransactionDate: string | null;
   isActive: boolean;
   provider: BankAccount["provider"];
+  /** Solde communiqué par la banque à la dernière synchronisation (comptes connectés). */
+  providerBalance: string | null;
+  lastSyncedAt: string | null;
 };
 
 async function toView(access: CompanyAccess, account: BankAccount): Promise<BankAccountView> {
@@ -55,6 +58,8 @@ async function toView(access: CompanyAccess, account: BankAccount): Promise<Bank
     lastTransactionDate: all._max.date ? toIsoDate(all._max.date) : null,
     isActive: account.isActive,
     provider: account.provider,
+    providerBalance: account.provider === "AGGREGATOR" && account.providerBalance !== null ? toMoneyString(account.providerBalance) : null,
+    lastSyncedAt: account.provider === "AGGREGATOR" ? (account.lastSyncedAt?.toISOString() ?? null) : null,
   };
 }
 
@@ -99,7 +104,8 @@ export async function updateBankAccount(access: CompanyAccess, userId: string, a
   await getBankAccount(access, accountId);
   const account = await access.db.bankAccount.update({
     where: { id: accountId },
-    data: { ...toData(input), ...(input.iban ? { ibanEncrypted: encryptSecret(input.iban), ibanLast4: input.iban.slice(-4) } : {}) },
+    // Le solde d'ouverture saisi par l'utilisateur prime désormais sur celui déduit du solde bancaire.
+    data: { ...toData(input), openingFromProvider: false, ...(input.iban ? { ibanEncrypted: encryptSecret(input.iban), ibanLast4: input.iban.slice(-4) } : {}) },
   });
   await recordAudit({ action: "bank.account.update", userId, companyId: access.company.id, entityType: "BankAccount", entityId: accountId, metadata: { ibanChanged: Boolean(input.iban) }, ...meta });
   // Le solde d'ouverture et sa date déterminent l'écriture d'ouverture et les opérations comptabilisées.

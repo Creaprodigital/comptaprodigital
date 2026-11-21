@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { verifyTotpCode } from "@/server/auth/mfa";
 import type { AuthContext } from "@/server/auth/session-store";
 import { getStripe } from "@/server/billing/stripe";
+import { revokeCompanyBankConnections } from "@/server/modules/bank/connections";
 
 /**
  * Suppression du compte par son titulaire (droit à l'effacement), dans le respect des
@@ -83,6 +84,8 @@ export async function deleteAccount(auth: AuthContext, input: { password: string
       },
     }),
   ]);
+  // Les connexions bancaires des entreprises archivées sont révoquées chez le prestataire.
+  for (const company of check.companiesToArchive) await revokeCompanyBankConnections(company.id).catch((error) => console.error("[compte] révocation des connexions bancaires", error));
   // Les coordonnées laissées dans les demandes de support sont effacées.
   await prisma.supportTicket.updateMany({ where: { userId: user.id }, data: { contactName: "Compte supprimé", contactEmail: null } });
   await recordAudit({ action: "account.deleted", userId: user.id, metadata: { archivedCompanies: check.companiesToArchive.map((c) => c.id) }, ...meta });

@@ -49,7 +49,7 @@ function analyze(input: ImportInput): StatementPreview {
  *    libellé → importée et signalée, l'utilisateur tranche ;
  *  - nouvelle.
  */
-async function classify(db: DbClient, companyId: string, account: BankAccount, transactions: ParsedTransaction[]): Promise<ClassifiedRow[]> {
+export async function classify(db: DbClient, companyId: string, account: BankAccount, transactions: ParsedTransaction[]): Promise<ClassifiedRow[]> {
   if (transactions.length === 0) return [];
   const fingerprints = fingerprintTransactions(transactions);
   const dates = transactions.map((t) => t.date).sort();

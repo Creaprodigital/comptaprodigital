@@ -61,6 +61,12 @@ export default async function AdminIntegrationsPage() {
         <Block title="Assistant IA (Anthropic)" check={s.ai}>
           <p className="text-muted-foreground">30 derniers jours : {s.ai.requests30d} requête(s), {s.ai.tokens30d.toLocaleString("fr-FR")} jetons, {s.ai.errors30d} erreur(s)</p>
         </Block>
+        <Block title="Synchronisation bancaire (Bridge)" check={s.bankSync}>
+          <p className="text-muted-foreground">
+            {s.bankSync.active} connexion(s) active(s), dont {s.bankSync.actionRequired} en attente d'une action de l'utilisateur
+            {s.bankSync.lastSyncAt ? ` · dernière synchronisation le ${new Date(s.bankSync.lastSyncAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}` : ""}
+          </p>
+        </Block>
         <Block title="Annuaire des entreprises (Sirene)" check={s.insee} />
         <Block title="Tâches quotidiennes" check={s.dailyJobs} />
       </div>

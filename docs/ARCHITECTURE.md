@@ -14,7 +14,7 @@ Navigateur ──HTTPS──► Caddy (reverse proxy, TLS) ──► Next.js (No
                                                              ├─ Prisma ──► MySQL 8
                                                              ├─ SMTP (e-mails transactionnels)
                                                              ├─ API Sirene (INSEE ou annuaire public)
-                                                             └─ à venir : S3, Stripe, agrégateur bancaire
+                                                             └─ S3, Stripe, Bridge (agrégateur bancaire)
 ```
 
 ### Principes
@@ -226,8 +226,32 @@ automatiques et les purges (sessions, compteurs de débit, fichiers des document
   module d'achats.
 - **Historique** — toute modification d'une opération est tracée dans le journal d'audit (`BankTransaction`). La
   date et le montant d'une opération importée ne sont pas modifiables.
-- **Prestataire bancaire** (`provider.ts`) — interface `BankDataProvider` pour un agrégateur agréé (parcours de
-  consentement hébergé par le prestataire, référence opaque de connexion). Aucune implémentation n'est raccordée.
+- **Synchronisation bancaire** (`provider.ts`, `bridge.ts`, `connections.ts`) — agrégateur agréé DSP2 : Bridge
+  (API v3, version `2025-01-15`), activé par `BRIDGE_CLIENT_ID` / `BRIDGE_CLIENT_SECRET`. Sans ces variables, rien
+  n'est affiché et seul l'import de relevés est proposé.
+  - *Connexion* : une entreprise = un utilisateur Bridge (`external_user_id` = identifiant de l'entreprise). Le
+    parcours Bridge Connect (pages de Bridge) reçoit un jeton à usage unique (`context`, 32 caractères) dont seule
+    l'empreinte est conservée (`bank_connect_sessions`, une heure). Au retour
+    (`/api/v1/bank/bridge/callback`), le jeton est vérifié pour le même utilisateur, puis l'item est relu chez
+    Bridge avec le jeton de l'utilisateur Bridge de l'entreprise : un identifiant d'item substitué dans l'URL est
+    refusé. Aucun identifiant bancaire ne transite par la plateforme.
+  - *Comptes* : seuls les comptes courants et d'épargne autorisés (`data_access`) sont repris. Un compte saisi à
+    la main avec le même IBAN est relié (ses opérations antérieures à la dernière opération importée ne sont pas
+    reprises : `providerSyncFrom`) ; sinon un compte est créé, dont le solde d'ouverture est déduit du solde
+    bancaire, et recalculé à l'arrivée de l'historique tant que l'utilisateur ne l'a pas modifié
+    (`openingFromProvider`).
+  - *Opérations* : incrémentales par compte (`since` = dernier `updated_at` reçu, `providerCursor`), pagination
+    `next_uri`. Les nouvelles passent par la détection des doublons (libellé brut de la banque) et les règles des
+    imports ; les opérations à venir (`future`) sont ignorées. Une opération modifiée ou supprimée par la banque
+    n'est mise à jour ou retirée que si elle n'a fait l'objet d'aucun traitement (à traiter, sans justificatif,
+    achat ni règlement) ; sinon le changement est journalisé (`bank.transaction.provider_changed`) ou signalé dans
+    la note de l'opération, jamais appliqué silencieusement. Les montants JSON sont convertis en décimal exact.
+  - *Mises à jour* : webhooks signés (`/api/v1/bank/bridge/webhook`, en-tête `BridgeApi-Signature`, HMAC-SHA256
+    du corps brut, plusieurs signatures `v1` acceptées pendant un changement de secret), traités après
+    l'accusé de réception ; la tâche quotidienne synchronise toutes les connexions (rattrapage).
+  - *Révocation* : « Déconnecter » supprime l'item chez Bridge ; les comptes repassent en alimentation manuelle,
+    opérations et écritures conservées. L'archivage d'une entreprise (suppression du compte de son propriétaire)
+    supprime l'utilisateur Bridge.
 
 ## Documents
 

@@ -131,7 +131,7 @@ export function AccountCards({ companyId, accounts, canWrite }: { companyId: str
                     {[account.bankName, account.ibanMasked ? `IBAN ${account.ibanMasked}` : null].filter(Boolean).join(" · ") || "Coordonnées non renseignées"}
                   </p>
                 </div>
-                {!account.isActive ? <Badge variant="outline">Archivé</Badge> : null}
+                {!account.isActive ? <Badge variant="outline">Archivé</Badge> : account.provider === "AGGREGATOR" ? <Badge variant="success">Synchronisé</Badge> : null}
               </div>
               <div>
                 <p className="tabular font-display text-2xl font-bold">{formatCurrency(account.balance, { currency: account.currency })}</p>
@@ -141,6 +141,11 @@ export function AccountCards({ companyId, accounts, canWrite }: { companyId: str
                     : `${account.transactionCount} opération${account.transactionCount > 1 ? "s" : ""} · dernière le ${formatDate(account.lastTransactionDate!)}`}
                   {account.toReviewCount > 0 ? ` · ${account.toReviewCount} à traiter` : ""}
                 </p>
+                {account.providerBalance !== null && account.providerBalance !== account.balance ? (
+                  <p className="mt-1 text-xs text-warning-foreground">
+                    Solde communiqué par la banque : {formatCurrency(account.providerBalance, { currency: account.currency })}. Vérifiez le solde d'ouverture et les opérations antérieures à la connexion.
+                  </p>
+                ) : null}
               </div>
               {canWrite ? (
                 <div className="flex flex-wrap gap-2 border-t pt-3">
