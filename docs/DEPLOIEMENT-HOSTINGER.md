@@ -3,10 +3,13 @@
 Ce guide décrit une mise en production avec Docker Compose : application, MySQL et reverse proxy Caddy (HTTPS
 automatique), puis l'automatisation par GitHub Actions.
 
-> **Statut.** Les fichiers Docker ont été écrits et relus, le build de production autonome et les scripts de
-> sauvegarde/restauration ont été exécutés et vérifiés, mais **l'image Docker et le workflow de déploiement n'ont
-> pas pu être exécutés dans l'environnement de développement** (pas de démon Docker). Faites un premier déploiement
-> sur un VPS de test avant la mise en production.
+> **Statut (22 novembre 2026).** Les deux images (`runner` et `tools`) ont été construites et la pile complète
+> exécutée en suivant ce guide, avec Docker Compose et Caddy en HTTPS (certificat local), hors VPS :
+> migrations et données de référence, santé `ok`, redirection HTTP → HTTPS, contrôle de production, tâches
+> quotidiennes, parcours client (connexion, entreprise, facture émise au format Factur-X conforme, dépôt d'un
+> document chiffré), persistance après `docker compose down` / `up`, sauvegarde chiffrée et son déchiffrement.
+> **Restent à exécuter sur le VPS** : l'obtention du certificat Let's Encrypt (nom de domaine réel), l'envoi
+> d'e-mails par votre SMTP, le workflow de déploiement GitHub Actions et la sauvegarde du volume des documents.
 
 ## 0. Avant de commencer
 
